@@ -41,4 +41,10 @@ interface ChatDao {
      */
     @Query("DELETE FROM chat_history WHERE isProcessed = 1 AND timestamp < :timestamp")
     suspend fun deleteOldProcessedChats(timestamp: Long)
+
+    @Query("SELECT * FROM chat_analysis WHERE petType = :petType ORDER BY timestamp DESC LIMIT 1")
+    suspend fun getLatestAnalysis(petType: String): ChatAnalysisEntity?
+
+    @Insert
+    suspend fun insertAnalysis(analysis: ChatAnalysisEntity)
 } 

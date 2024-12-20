@@ -20,9 +20,11 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.tooling.preview.Preview
 import androidx.compose.ui.unit.dp
+import androidx.lifecycle.lifecycleScope
 import androidx.lifecycle.viewmodel.compose.viewModel
 import com.example.chat.model.ChatMessage
 import com.example.chat.model.PetTypes
+import kotlinx.coroutines.launch
 
 
 class MainActivity : ComponentActivity() {
@@ -43,6 +45,10 @@ class MainActivity : ComponentActivity() {
             ) != PackageManager.PERMISSION_GRANTED) {
                 requestPermissionLauncher.launch(Manifest.permission.POST_NOTIFICATIONS)
             }
+        }
+        
+        lifecycleScope.launch {  // 使用 lifecycleScope 创建协程
+            // 在这里可以安全地调用挂起函数
         }
         
         setContent {

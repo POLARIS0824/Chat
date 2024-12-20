@@ -2,6 +2,7 @@ package com.example.chat
 
 import com.example.chat.data.ChatDao
 import com.example.chat.data.ChatEntity
+import com.example.chat.data.ChatAnalysisEntity
 import com.example.chat.model.ChatMessage
 import com.example.chat.model.PetTypes
 import com.example.chat.model.PictureInfo
@@ -99,20 +100,102 @@ class PetChatRepository private constructor(
     }
 
     /**
+     * 获取带用户偏好的系统提示
+     */
+    private suspend fun getEnhancedPrompt(petType: PetTypes): String {
+        val basePrompt = prompts[petType] ?: ""
+        val analysis = chatDao.getLatestAnalysis(petType.name)
+        
+        return if (analysis != null) {
+            """
+            $basePrompt
+            
+            用户画像信息：
+            总体分析：${analysis.summary}
+            用户偏好：${analysis.preferences}
+            互动模式：${analysis.patterns}
+            
+            请根据以上用户画像信息，调整你的回复风格和内容。
+            """.trimIndent()
+        } else {
+            basePrompt
+        }
+    }
+
+    /**
+     * 处理未处理的聊天记录并生成分析
+     */
+    suspend fun processUnprocessedChats() {
+        val unprocessedCount = chatDao.getUnprocessedChatsCount()
+        if (unprocessedCount >= 10) {
+            val chats = chatDao.getUnprocessedChats()
+            val petType = PetTypes.valueOf(chats.first().petType)
+            
+            val systemPrompt = """分析以下对话记录，执行以下任务：
+                1. 去除重复或相似的对话
+                2. 提取重要的用户偏好和兴趣点
+                3. 总结用户与宠物的互动模式
+                4. 返回JSON格式的分析结果
+                格式：{
+                    "summary": "总体分析",
+                    "preferences": ["偏好1", "偏好2"],
+                    "patterns": ["模式1", "模式2"]
+                }
+            """.trimIndent()
+
+            val chatHistory = chats.joinToString("\n") { 
+                "${if (it.isFromUser) "用户" else "宠物"}：${it.content}" 
+            }
+
+            try {
+                val response = getPetResponse(petType, chatHistory)
+                
+                // 解析AI返回的JSON结果
+                try {
+                    val analysis = gson.fromJson(response, ChatAnalysisResult::class.java)
+                    
+                    // 保存分析结果
+                    chatDao.insertAnalysis(ChatAnalysisEntity(
+                        petType = petType.name,
+                        summary = analysis.summary,
+                        preferences = gson.toJson(analysis.preferences),
+                        patterns = gson.toJson(analysis.patterns)
+                    ))
+                } catch (e: Exception) {
+                    e.printStackTrace()
+                }
+
+                // 标记消息为已处理
+                chatDao.update(chats.map { it.copy(isProcessed = true) })
+                
+                // 清理旧消息
+                val oneWeekAgo = System.currentTimeMillis() - 7 * 24 * 60 * 60 * 1000
+                chatDao.deleteOldProcessedChats(oneWeekAgo)
+            } catch (e: Exception) {
+                e.printStackTrace()
+            }
+        }
+    }
+
+    /**
      * 调用AI API获取宠物回复
      * @param petType 当前选择的宠物类型
      * @param message 用户输入的消息
      * @return String AI的回复内容
      */
     suspend fun getPetResponse(petType: PetTypes, message: String): String {
+        // 先获取增强的提示词
+        val enhancedPrompt = getEnhancedPrompt(petType)
+        
+        // 然后使用 suspendCoroutine 处理网络请求
         return suspendCoroutine { continuation ->
             val requestBody = DeepseekRequest(
                 messages = listOf(
-                    Message("system", prompts[petType] ?: ""),
+                    Message("system", enhancedPrompt),  // 使用已获取的提示词
                     Message("user", message)
                 ),
                 model = "deepseek-chat",
-                temperature = 1.7  // 较高的temperature值使AI回复更有创意和随机性
+                temperature = 1.7
             )
 
             val request = Request.Builder()
@@ -160,44 +243,6 @@ class PetChatRepository private constructor(
         )
         )
     }
-
-    /**
-     * 处理未处理的聊天记录
-     * 当累积10条未处理消息时，进行分析和处理
-     */
-    suspend fun processUnprocessedChats() {
-        val unprocessedCount = chatDao.getUnprocessedChatsCount()
-        if (unprocessedCount >= 10) {
-            val chats = chatDao.getUnprocessedChats()
-            
-            // 构建系统提示
-            val systemPrompt = """分析以下对话记录，执行以下任务：
-                1. 去除重复或相似的对话
-                2. 提取重要的用户偏好和兴趣点
-                3. 总结用户与宠物的互动模式
-                4. 返回JSON格式的分析结果
-                格式：{"summary": "总体分析", "preferences": ["偏好1", "偏好2"], "patterns": ["模式1", "模式2"]}
-            """.trimIndent()
-
-            val chatHistory = chats.joinToString("\n") { 
-                "${if (it.isFromUser) "用户" else "宠物"}：${it.content}" 
-            }
-
-            try {
-                val response = getPetResponse(PetTypes.valueOf(chats.first().petType), chatHistory)
-                // TODO: 处理分析结果，可以存储到专门的表中或用于优化对话
-                
-                // 标记这些消息为已处理
-                chatDao.update(chats.map { it.copy(isProcessed = true) })
-                
-                // 删除一周前的已处理消息
-                val oneWeekAgo = System.currentTimeMillis() - 7 * 24 * 60 * 60 * 1000
-                chatDao.deleteOldProcessedChats(oneWeekAgo)
-            } catch (e: Exception) {
-                // 处理错误情况，可以记录日志或重试
-            }
-        }
-    }
 }
 
 /**
@@ -229,4 +274,13 @@ data class DeepseekResponse(
  */
 data class Choice(
     val message: Message  // 选中的回复消息
+)
+
+/**
+ * AI分析结果的数据类
+ */
+private data class ChatAnalysisResult(
+    val summary: String,
+    val preferences: List<String>,
+    val patterns: List<String>
 )
