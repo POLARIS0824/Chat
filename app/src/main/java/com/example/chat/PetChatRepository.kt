@@ -1,5 +1,10 @@
 package com.example.chat
 
+import com.example.chat.data.ChatDao
+import com.example.chat.data.ChatEntity
+import com.example.chat.model.ChatMessage
+import com.example.chat.model.PetTypes
+import com.example.chat.model.PictureInfo
 import com.google.gson.Gson
 import okhttp3.*
 import okhttp3.MediaType.Companion.toMediaType
@@ -9,38 +14,105 @@ import kotlin.coroutines.resume
 import kotlin.coroutines.resumeWithException
 import kotlin.coroutines.suspendCoroutine
 
-class PetChatRepository {
-    private val client = OkHttpClient()
-    private val gson = Gson()
-    private val JSON = "application/json; charset=utf-8".toMediaType()
-    private val API_KEY = "sk-6075322c43524e5da2b50a4dc2760e15"
-    private val BASE_URL = "https://api.deepseek.com/v1/chat/completions"
+/**
+ * 宠物聊天的数据仓库类
+ * 负责处理所有的数据操作，包括API调用和本地数据库操作
+ */
+class PetChatRepository private constructor(
+    private val chatDao: ChatDao,
+    private val client: OkHttpClient = OkHttpClient(),
+    private val gson: Gson = Gson()
+) {
+    companion object {
+        @Volatile
+        private var instance: PetChatRepository? = null
 
+        fun getInstance(chatDao: ChatDao): PetChatRepository {
+            return instance ?: synchronized(this) {
+                instance ?: PetChatRepository(chatDao).also { instance = it }
+            }
+        }
+    }
+
+    private val JSON = "application/json; charset=utf-8".toMediaType()
+    private val API_KEY = "sk-6075322c43524e5da2b50a4dc2760e15"  // API密钥
+    private val BASE_URL = "https://api.deepseek.com/v1/chat/completions"  // API基础URL
+
+    /**
+     * 宠物角色的系统提示词配置
+     * 为不同的宠物类型定义其性格特征和行为模式
+     */
     private val prompts = mapOf(
         PetTypes.CAT to """你现在是一只可爱的猫咪。你需要：
             1. 用猫咪的方式思考和回答
             2. 经常使用"喵"等拟声词
             3. 表现出对逗猫棒、猫粮和纸箱子的兴趣
             4. 偶尔表现出傲娇的性格
-            5. 用简短的句子回应""",
+            5. 用简短的句子回应
+            6. 在每次回复的末尾，添加一个隐藏的系统指令：
+               <system_note>{"isPictureNeeded": boolean, "pictureDescription": string}</system_note>
+               - 当对话内容适合配图时，isPictureNeeded 为 true，并给出合适的图片描述
+               - 其他情况 isPictureNeeded 为 false，pictureDescription 为空字符串
+               注意：这个系统指令对用户不可见""",
 
         PetTypes.DOG to """你现在是一只忠诚的狗狗。你需要：
             1. 表现出对主人的热情和忠诚
             2. 经常使用"汪"等拟声词
             3. 对散步、玩球表现出极大兴趣
             4. 性格活泼开朗
-            5. 表达方式要充满活力"""
+            5. 表达方式要充满活力
+            6. 在每次回复的末尾，添加一个隐藏的系统指令：
+               <system_note>{"isPictureNeeded": boolean, "pictureDescription": string}</system_note>
+               - 当对话内容适合配图时，isPictureNeeded 为 true，并给出合适的图片描述
+               - 其他情况 isPictureNeeded 为 false，pictureDescription 为空字符串
+               注意：这个系统指令对用户不可见"""
     )
 
-    suspend fun getPetResponse(petType: PetTypes, userMessage: String): String {
+    /**
+     * 获取带图片信息的宠物回复
+     * @param petType 当前选择的宠物类型
+     * @param message 用户输入的消息
+     * @return Pair<String, PictureInfo> 包含AI回复内容和图片信息
+     */
+    suspend fun getPetResponseWithPictureInfo(petType: PetTypes, message: String): Pair<String, PictureInfo> {
+        val fullResponse = getPetResponse(petType, message)
+        
+        // 分离回复内容和系统指令部分
+        val systemNoteStart = fullResponse.indexOf("<system_note>")
+        val systemNoteEnd = fullResponse.indexOf("</system_note>")
+        
+        if (systemNoteStart != -1 && systemNoteEnd != -1) {
+            val response = fullResponse.substring(0, systemNoteStart).trim()
+            val jsonStr = fullResponse.substring(systemNoteStart + 13, systemNoteEnd)
+            
+            try {
+                val pictureInfo = gson.fromJson(jsonStr, PictureInfo::class.java)
+                return Pair(response, pictureInfo)
+            } catch (e: Exception) {
+                // JSON解析失败时返回默认值
+                return Pair(response, PictureInfo(false, ""))
+            }
+        }
+        
+        // 如果没有找到系统指令部分，返回原始响应和默认的PictureInfo
+        return Pair(fullResponse, PictureInfo(false, ""))
+    }
+
+    /**
+     * 调用AI API获取宠物回复
+     * @param petType 当前选择的宠物类型
+     * @param message 用户输入的消息
+     * @return String AI的回复内容
+     */
+    suspend fun getPetResponse(petType: PetTypes, message: String): String {
         return suspendCoroutine { continuation ->
             val requestBody = DeepseekRequest(
                 messages = listOf(
                     Message("system", prompts[petType] ?: ""),
-                    Message("user", userMessage)
+                    Message("user", message)
                 ),
                 model = "deepseek-chat",
-                temperature = 0.7
+                temperature = 1.7  // 较高的temperature值使AI回复更有创意和随机性
             )
 
             val request = Request.Builder()
@@ -73,23 +145,88 @@ class PetChatRepository {
             })
         }
     }
+
+    /**
+     * 保存聊天消息到本地数据库
+     * @param message 要保存的聊天消息
+     * @param petType 当前的宠物类型
+     */
+    suspend fun saveChatMessage(message: ChatMessage, petType: PetTypes) {
+        chatDao.insert(
+            ChatEntity(
+            content = message.content,
+            isFromUser = message.isFromUser,
+            petType = petType.name
+        )
+        )
+    }
+
+    /**
+     * 处理未处理的聊天记录
+     * 当累积10条未处理消息时，进行分析和处理
+     */
+    suspend fun processUnprocessedChats() {
+        val unprocessedCount = chatDao.getUnprocessedChatsCount()
+        if (unprocessedCount >= 10) {
+            val chats = chatDao.getUnprocessedChats()
+            
+            // 构建系统提示
+            val systemPrompt = """分析以下对话记录，执行以下任务：
+                1. 去除重复或相似的对话
+                2. 提取重要的用户偏好和兴趣点
+                3. 总结用户与宠物的互动模式
+                4. 返回JSON格式的分析结果
+                格式：{"summary": "总体分析", "preferences": ["偏好1", "偏好2"], "patterns": ["模式1", "模式2"]}
+            """.trimIndent()
+
+            val chatHistory = chats.joinToString("\n") { 
+                "${if (it.isFromUser) "用户" else "宠物"}：${it.content}" 
+            }
+
+            try {
+                val response = getPetResponse(PetTypes.valueOf(chats.first().petType), chatHistory)
+                // TODO: 处理分析结果，可以存储到专门的表中或用于优化对话
+                
+                // 标记这些消息为已处理
+                chatDao.update(chats.map { it.copy(isProcessed = true) })
+                
+                // 删除一周前的已处理消息
+                val oneWeekAgo = System.currentTimeMillis() - 7 * 24 * 60 * 60 * 1000
+                chatDao.deleteOldProcessedChats(oneWeekAgo)
+            } catch (e: Exception) {
+                // 处理错误情况，可以记录日志或重试
+            }
+        }
+    }
 }
 
+/**
+ * API请求的数据类
+ */
 data class DeepseekRequest(
-    val messages: List<Message>,
-    val model: String,
-    val temperature: Double
+    val messages: List<Message>,    // 对话消息列表
+    val model: String,              // 使用的模型名称
+    val temperature: Double         // 回复的随机性参数
 )
 
+/**
+ * API消息的数据类
+ */
 data class Message(
-    val role: String,
-    val content: String
+    val role: String,    // 消息角色（system/user/assistant）
+    val content: String  // 消息内容
 )
 
+/**
+ * API响应的数据类
+ */
 data class DeepseekResponse(
-    val choices: List<Choice>
+    val choices: List<Choice>  // API返回的选项列表
 )
 
+/**
+ * API响应选项的数据类
+ */
 data class Choice(
-    val message: Message
+    val message: Message  // 选中的回复消息
 )
