@@ -63,12 +63,14 @@ class MainActivity : ComponentActivity() {
             PetChatApp()
         }
     }
+
+    override fun onPause() {
+        super.onPause()
+        // 保存当前状态
+    }
 }
 
-@OptIn(
-    ExperimentalFoundationApi::class,
-    ExperimentalMaterial3Api::class
-)
+@OptIn(ExperimentalFoundationApi::class, ExperimentalMaterial3Api::class)
 @Composable
 fun PetChatApp(viewModel: PetChatViewModel = viewModel()) {
     var message by remember { mutableStateOf("") }
@@ -76,6 +78,8 @@ fun PetChatApp(viewModel: PetChatViewModel = viewModel()) {
     var currentScreen by remember { mutableStateOf(Screen.Chat) }
 
     MaterialTheme {
+        // 添加深色模式支持
+        // 添加动态颜色支持
         Scaffold(
             // 添加宠物类型选择器到顶部
             topBar = {

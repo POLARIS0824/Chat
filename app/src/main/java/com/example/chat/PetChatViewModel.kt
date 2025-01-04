@@ -34,6 +34,10 @@ class PetChatViewModel(application: Application) : AndroidViewModel(application)
     private var lastPictureInfo: PictureInfo? = null
         private set
 
+    // 添加加载状态
+    var isLoading by mutableStateOf(false)
+        private set
+
     /**
      * 切换当前的宠物类型
      */
