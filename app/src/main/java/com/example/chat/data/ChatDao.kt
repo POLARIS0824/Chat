@@ -47,4 +47,16 @@ interface ChatDao {
 
     @Insert
     suspend fun insertAnalysis(analysis: ChatAnalysisEntity)
+
+    @Query("SELECT * FROM notes WHERE petType = :petType ORDER BY timestamp DESC")
+    suspend fun getNotesByType(petType: String): List<NoteEntity>
+
+    @Insert
+    suspend fun insertNote(note: NoteEntity)
+
+    @Delete
+    suspend fun deleteNote(note: NoteEntity)
+
+    @Update
+    suspend fun updateNote(note: NoteEntity)
 } 

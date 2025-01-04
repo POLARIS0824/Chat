@@ -10,8 +10,8 @@ import androidx.room.RoomDatabase
  * 使用单例模式确保整个应用只有一个数据库实例
  */
 @Database(
-    entities = [ChatEntity::class, ChatAnalysisEntity::class],
-    version = 2,
+    entities = [ChatEntity::class, ChatAnalysisEntity::class, NoteEntity::class],
+    version = 3,
     exportSchema = false
 )
 abstract class ChatDatabase : RoomDatabase() {

@@ -8,6 +8,7 @@ import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.activity.result.ActivityResultLauncher
+import androidx.compose.foundation.ExperimentalFoundationApi
 import androidx.core.app.ActivityCompat
 import androidx.core.content.ContextCompat
 import androidx.core.content.pm.PackageInfoCompat
@@ -25,6 +26,13 @@ import androidx.lifecycle.viewmodel.compose.viewModel
 import com.example.chat.model.ChatMessage
 import com.example.chat.model.PetTypes
 import kotlinx.coroutines.launch
+import java.util.*
+import androidx.compose.ui.graphics.vector.ImageVector
+import com.example.chat.ui.NotesScreen
+import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.filled.Email
+import androidx.compose.material.icons.filled.List
+import androidx.compose.material.icons.filled.Person
 
 
 class MainActivity : ComponentActivity() {
@@ -57,86 +65,220 @@ class MainActivity : ComponentActivity() {
     }
 }
 
+@OptIn(
+    ExperimentalFoundationApi::class,
+    ExperimentalMaterial3Api::class
+)
 @Composable
 fun PetChatApp(viewModel: PetChatViewModel = viewModel()) {
     var message by remember { mutableStateOf("") }
+    // 添加导航状态
+    var currentScreen by remember { mutableStateOf(Screen.Chat) }
 
-    Column(
-        modifier = Modifier
-            .fillMaxSize()
-            .padding(16.dp)
+    MaterialTheme {
+        Scaffold(
+            // 添加宠物类型选择器到顶部
+            topBar = {
+                TopAppBar(
+                    title = { Text(currentScreen.title) },
+                    actions = {
+                        // 只在聊天界面显示宠物选择器
+                        if (currentScreen == Screen.Chat) {
+                            PetTypeSelector(
+                                currentType = viewModel.currentPetType,
+                                onTypeSelected = { viewModel.selectPetType(it) }
+                            )
+                        }
+                    }
+                )
+            },
+            bottomBar = {
+                NavigationBar(
+                    containerColor = MaterialTheme.colorScheme.surface,
+                    tonalElevation = 8.dp
+                ) {
+                    Screen.values().forEach { screen ->
+                        NavigationBarItem(
+                            selected = currentScreen == screen,
+                            onClick = { currentScreen = screen },
+                            icon = { Icon(screen.icon, contentDescription = null) },
+                            label = { Text(screen.title) },
+                            colors = NavigationBarItemDefaults.colors(
+                                selectedIconColor = MaterialTheme.colorScheme.primary,
+                                unselectedIconColor = MaterialTheme.colorScheme.onSurfaceVariant
+                            )
+                        )
+                    }
+                }
+            }
+        ) { paddingValues ->
+            // 根据当前选中的屏幕显示不同的内容
+            when (currentScreen) {
+                Screen.Chat -> ChatScreen(
+                    viewModel = viewModel,
+                    message = message,
+                    onMessageChange = { message = it },
+                    modifier = Modifier.padding(paddingValues)
+                )
+                Screen.Notes -> NotesScreen(
+                    modifier = Modifier.padding(paddingValues)
+                )
+                Screen.Contacts -> {
+                    // TODO: 实现联系人界面
+                }
+            }
+        }
+    }
+}
+
+// 添加屏幕枚举
+enum class Screen(val title: String, val icon: ImageVector) {
+    Chat("聊天", Icons.Filled.Email),
+    Notes("便利贴", Icons.Filled.List),
+    Contacts("名片夹", Icons.Filled.Person)
+}
+
+// 添加宠物类型选择器
+@Composable
+fun PetTypeSelector(
+    currentType: PetTypes,
+    onTypeSelected: (PetTypes) -> Unit
+) {
+    Row(
+        horizontalArrangement = Arrangement.spacedBy(8.dp),
+        verticalAlignment = Alignment.CenterVertically
     ) {
-        // 宠物选择
-        Row(
-            modifier = Modifier.fillMaxWidth(),
-            horizontalArrangement = Arrangement.SpaceEvenly
+        PetTypes.values().forEach { type ->
+            FilterChip(
+                selected = currentType == type,
+                onClick = { onTypeSelected(type) },
+                label = { Text(type.displayName) }
+            )
+        }
+    }
+}
+
+// 抽取聊天界面为单独的组件
+@OptIn(ExperimentalFoundationApi::class)
+@Composable
+fun ChatScreen(
+    viewModel: PetChatViewModel,
+    message: String,
+    onMessageChange: (String) -> Unit,
+    modifier: Modifier = Modifier
+) {
+    Column(modifier = modifier.fillMaxSize()) {
+        LazyColumn(
+            modifier = Modifier
+                .weight(1f)
+                .fillMaxWidth(),
+            contentPadding = PaddingValues(horizontal = 16.dp, vertical = 8.dp),
+            verticalArrangement = Arrangement.spacedBy(8.dp)
         ) {
-            PetTypes.values().forEach { petType ->
-                FilterChip(
-                    selected = viewModel.currentPetType == petType,
-                    onClick = { viewModel.selectPetType(petType) },
-                    label = { Text(petType.displayName) }
+            items(
+                items = viewModel.chatHistory,
+                key = { message -> message.hashCode() }
+            ) { message ->
+                ChatBubble(
+                    message = message,
+                    modifier = Modifier.animateItemPlacement()
                 )
             }
         }
 
-        // 聊天历史
-        LazyColumn(
-            modifier = Modifier
-                .weight(1f)
-                .fillMaxWidth()
-                .padding(vertical = 8.dp)
-        ) {
-            items(viewModel.chatHistory) { message ->
-                ChatBubble(message)
-            }
-        }
-
-        // 输入区域
-        Row(
-            modifier = Modifier.fillMaxWidth(),
-            verticalAlignment = Alignment.CenterVertically
-        ) {
-            TextField(
-                value = message,
-                onValueChange = { message = it },
-                modifier = Modifier.weight(1f),
-                placeholder = { Text("输入消息...") }
-            )
-
-            Spacer(modifier = Modifier.width(8.dp))
-
-            Button(
-                onClick = {
-                    if (message.isNotEmpty()) {
-                        viewModel.sendMessage(message)
-                        message = ""
-                    }
+        ChatInput(
+            message = message,
+            onMessageChange = onMessageChange,
+            onSendClick = {
+                if (message.isNotEmpty()) {
+                    viewModel.sendMessage(message)
+                    onMessageChange("")
                 }
-            ) {
-                Text("发送")
+            }
+        )
+    }
+}
+
+@Composable
+fun ChatBubble(
+    message: ChatMessage,
+    modifier: Modifier = Modifier
+) {
+    val bubbleColor = if (message.isFromUser)
+        MaterialTheme.colorScheme.primary
+    else MaterialTheme.colorScheme.secondary
+    
+    val alignment = if (message.isFromUser)
+        Arrangement.End else Arrangement.Start
+
+    Row(
+        modifier = modifier.fillMaxWidth(),
+        horizontalArrangement = alignment
+    ) {
+        Card(
+            colors = CardDefaults.cardColors(containerColor = bubbleColor),
+            modifier = Modifier.widthIn(max = 340.dp)  // 限制气泡最大宽度
+        ) {
+            Column(modifier = Modifier.padding(8.dp)) {
+                Text(
+                    text = message.content,
+                    color = MaterialTheme.colorScheme.onPrimary,
+                    style = MaterialTheme.typography.bodyLarge
+                )
+                
+//                if (message.imageUrl.isNotEmpty()) {
+//                    Spacer(modifier = Modifier.height(8.dp))
+//                    AsyncImage(
+//                        model = message.imageUrl,
+//                        contentDescription = null,
+//                        modifier = Modifier
+//                            .size(200.dp)
+//                            .clip(MaterialTheme.shapes.medium),
+//                        contentScale = ContentScale.Crop
+//                    )
+//                }
             }
         }
     }
 }
 
 @Composable
-fun ChatBubble(message: ChatMessage) {
-    Row(
-        modifier = Modifier
-            .fillMaxWidth()
-            .padding(vertical = 4.dp),
-        horizontalArrangement = if (message.isFromUser) Arrangement.End else Arrangement.Start
+fun ChatInput(
+    message: String,
+    onMessageChange: (String) -> Unit,
+    onSendClick: () -> Unit,
+    modifier: Modifier = Modifier
+) {
+    Surface(
+        modifier = modifier,
+        tonalElevation = 2.dp
     ) {
-        Surface(
-            color = if (message.isFromUser) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.secondary,
-            shape = MaterialTheme.shapes.medium
+        Row(
+            modifier = Modifier
+                .fillMaxWidth()
+                .padding(horizontal = 16.dp, vertical = 8.dp),
+            verticalAlignment = Alignment.CenterVertically
         ) {
-            Text(
-                text = message.content,
-                modifier = Modifier.padding(8.dp),
-                color = MaterialTheme.colorScheme.onPrimary
+            // TODO: 添加更多输入选项的图标(语音、表情等)
+            TextField(
+                value = message,
+                onValueChange = onMessageChange,
+                modifier = Modifier
+                    .weight(1f)
+                    .padding(end = 8.dp),
+                placeholder = { Text("输入消息...") },
+                colors = TextFieldDefaults.colors(
+                    unfocusedContainerColor = MaterialTheme.colorScheme.surface,
+                    focusedContainerColor = MaterialTheme.colorScheme.surface
+                )
             )
+            
+            Button(
+                onClick = onSendClick,
+                enabled = message.isNotEmpty()
+            ) {
+                Text("发送")
+            }
         }
     }
 }

@@ -82,21 +82,21 @@ class PetChatRepository private constructor(
         val systemNoteStart = fullResponse.indexOf("<system_note>")
         val systemNoteEnd = fullResponse.indexOf("</system_note>")
         
-        if (systemNoteStart != -1 && systemNoteEnd != -1) {
+        return if (systemNoteStart != -1 && systemNoteEnd != -1) {
+            // 只返回系统指令之前的内容
             val response = fullResponse.substring(0, systemNoteStart).trim()
             val jsonStr = fullResponse.substring(systemNoteStart + 13, systemNoteEnd)
             
             try {
                 val pictureInfo = gson.fromJson(jsonStr, PictureInfo::class.java)
-                return Pair(response, pictureInfo)
+                Pair(response, pictureInfo)
             } catch (e: Exception) {
-                // JSON解析失败时返回默认值
-                return Pair(response, PictureInfo(false, ""))
+                Pair(response, PictureInfo(false, ""))
             }
+        } else {
+            // 如果没有找到系统指令，返回完整响应和空图片信息
+            Pair(fullResponse, PictureInfo(false, ""))
         }
-        
-        // 如果没有找到系统指令部分，返回原始响应和默认的PictureInfo
-        return Pair(fullResponse, PictureInfo(false, ""))
     }
 
     /**

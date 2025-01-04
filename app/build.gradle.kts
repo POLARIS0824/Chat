@@ -1,7 +1,23 @@
+import java.util.Properties
+
 plugins {
     alias(libs.plugins.android.application)
     alias(libs.plugins.kotlin.android)
     id("kotlin-kapt")
+}
+
+// 加载 keystore 配置
+val keystoreProperties = Properties().apply {
+    try {
+        val keystorePropertiesFile = rootProject.file("keystore.properties")
+        if (keystorePropertiesFile.exists()) {
+            load(keystorePropertiesFile.reader())
+        } else {
+            logger.warn("keystore.properties file not found. Using default signing config.")
+        }
+    } catch (e: Exception) {
+        logger.error("Failed to load keystore.properties: ${e.message}")
+    }
 }
 
 android {
@@ -21,13 +37,23 @@ android {
         }
     }
 
+    signingConfigs {
+        create("release") {
+            keyAlias = keystoreProperties.getProperty("keyAlias", "")
+            keyPassword = keystoreProperties.getProperty("keyPassword", "")
+            storeFile = keystoreProperties.getProperty("storeFile", "")?.let { file(it) }
+            storePassword = keystoreProperties.getProperty("storePassword", "")
+        }
+    }
+
     buildTypes {
         release {
-            isMinifyEnabled = false
+            isMinifyEnabled = true
             proguardFiles(
                 getDefaultProguardFile("proguard-android-optimize.txt"),
                 "proguard-rules.pro"
             )
+            signingConfig = signingConfigs.getByName("release")
         }
     }
     compileOptions {
