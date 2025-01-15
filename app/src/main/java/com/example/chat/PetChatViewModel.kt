@@ -38,6 +38,10 @@ class PetChatViewModel(application: Application) : AndroidViewModel(application)
     var isLoading by mutableStateOf(false)
         private set
 
+    // 添加一个可观察的状态来触发滚动
+    private var _shouldScrollToBottom = mutableStateOf(false)
+    val shouldScrollToBottom: Boolean by _shouldScrollToBottom
+
     /**
      * 切换当前的宠物类型
      */
@@ -49,31 +53,52 @@ class PetChatViewModel(application: Application) : AndroidViewModel(application)
      * 发送新消息
      * 处理用户输入，获取AI响应，并更新UI状态
      */
-    fun sendMessage(content: String, petType: PetTypes) {
+    fun sendMessage(message: String) {
+        if (message.isBlank()) return
+        
         viewModelScope.launch {
-            // 添加用户消息
-            val userMessage = ChatMessage(
-                content = content,
-                isFromUser = true,
-                petType = petType
-            )
-            chatHistory = chatHistory + userMessage
-            repository.saveChatMessage(userMessage, petType)
-
+            isLoading = true
             try {
+                // 添加用户消息
+                val userMessage = ChatMessage(
+                    content = message,
+                    isFromUser = true,
+                    petType = currentPetType
+                )
+                chatHistory = chatHistory + userMessage
+                repository.saveChatMessage(userMessage, currentPetType)
+
                 // 获取AI响应
-                val (response, pictureInfo) = repository.getPetResponseWithPictureInfo(petType, content)
+                val (response, pictureInfo) = repository.getPetResponseWithPictureInfo(currentPetType, message)
                 val petMessage = ChatMessage(
                     content = response,
                     isFromUser = false,
-                    petType = petType
+                    petType = currentPetType
                 )
                 chatHistory = chatHistory + petMessage
-                repository.saveChatMessage(petMessage, petType)
+                repository.saveChatMessage(petMessage, currentPetType)
+                
+                // 检查是否需要进行分析
+                if (repository.getUnprocessedChatsCount() >= 10) {
+                    repository.analyzeChats()
+                }
+                
+                // 触发滚动到底部
+                _shouldScrollToBottom.value = true
+                
             } catch (e: Exception) {
-                // 处理错误
+                e.printStackTrace()
+            } finally {
+                isLoading = false
             }
         }
+    }
+
+    /**
+     * 重置滚动状态
+     */
+    fun resetScroll() {
+        _shouldScrollToBottom.value = false
     }
 
     /**

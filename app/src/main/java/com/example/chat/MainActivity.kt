@@ -32,28 +32,20 @@ import java.util.*
 import androidx.compose.ui.graphics.vector.ImageVector
 import com.example.chat.ui.NotesScreen
 import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.filled.Email
-import androidx.compose.material.icons.filled.List
-import androidx.compose.material.icons.filled.Person
 import androidx.compose.foundation.shape.RoundedCornerShape
-import androidx.compose.material.icons.automirrored.filled.Send
-import androidx.compose.material.icons.filled.AccountBox
-import androidx.compose.material.icons.filled.AccountCircle
 import androidx.compose.material.icons.filled.ArrowBack
-import androidx.compose.material.icons.filled.Create
-import androidx.compose.material.icons.filled.Send
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.text.style.TextOverflow
 import com.example.chat.model.ChatSession
 import java.text.SimpleDateFormat
 import android.app.Application
+import android.view.WindowManager
+import androidx.compose.animation.Crossfade
+import androidx.compose.animation.core.animateFloat
+import androidx.compose.animation.core.tween
+import androidx.compose.animation.core.updateTransition
 import androidx.compose.foundation.background
-import androidx.compose.foundation.text.BasicTextField
-import androidx.compose.material.icons.filled.Build
-import androidx.compose.material.icons.filled.Call
-import androidx.compose.material.icons.filled.Face
-import androidx.compose.material.icons.filled.Favorite
 import androidx.compose.material.icons.filled.Menu
 import androidx.compose.material.icons.filled.Settings
 import androidx.compose.ui.tooling.preview.PreviewParameter
@@ -65,15 +57,15 @@ import androidx.compose.material3.DrawerValue
 import androidx.core.view.WindowCompat
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.Color.Companion.Transparent
-import androidx.compose.ui.graphics.Color.Companion.White
-import androidx.compose.ui.graphics.Color.Companion.Black
-import androidx.compose.ui.platform.LocalContext
-import androidx.compose.ui.unit.dp
-import androidx.core.view.WindowInsetsControllerCompat
-import kotlinx.coroutines.launch
 import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.foundation.lazy.rememberLazyListState
-//import androidx.compose.material.icons.filled.Pets
+import androidx.compose.foundation.text.KeyboardActions
+import androidx.compose.foundation.text.KeyboardOptions
+import androidx.compose.ui.draw.alpha
+import androidx.compose.ui.layout.ContentScale
+import androidx.compose.ui.text.input.ImeAction
+import androidx.compose.ui.zIndex
+import kotlinx.coroutines.delay
 
 class MainActivity : ComponentActivity() {
     private val requestPermissionLauncher: ActivityResultLauncher<String> = registerForActivityResult(
@@ -87,6 +79,7 @@ class MainActivity : ComponentActivity() {
 
         // 设置沉浸式状态栏
         WindowCompat.setDecorFitsSystemWindows(window, false)
+        window.setSoftInputMode(WindowManager.LayoutParams.SOFT_INPUT_ADJUST_RESIZE)
 
         // 检查并请求通知权限
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
@@ -238,7 +231,17 @@ fun PetChatApp(viewModel: PetChatViewModel = viewModel()) {
                     NavigationBar {
                         BottomNavItems.forEach { item ->
                             NavigationBarItem(
-                                icon = { Icon(item.icon, contentDescription = item.title) },
+                                icon = {
+                                    Icon(
+                                        painter = painterResource(
+                                            id = if (currentScreen == item.screen)
+                                                item.selectedIcon
+                                            else
+                                                item.unselectedIcon
+                                        ),
+                                        contentDescription = item.title
+                                    )
+                                },
                                 label = { Text(item.title) },
                                 selected = currentScreen == item.screen,
                                 onClick = { currentScreen = item.screen }
@@ -247,7 +250,10 @@ fun PetChatApp(viewModel: PetChatViewModel = viewModel()) {
                     }
                 }
             ) { padding ->
-                Box(modifier = Modifier.padding(padding)) {
+                Box(modifier = Modifier
+                    .fillMaxSize()
+                    .padding(padding)
+                ) {
                     when (currentScreen) {
                         Screen.Chat -> {
                             ChatScreen(
@@ -270,17 +276,34 @@ fun PetChatApp(viewModel: PetChatViewModel = viewModel()) {
 
 // 底部导航项
 private val BottomNavItems = listOf(
-    NavItem(Screen.Chat, "聊天", Icons.Filled.Email),
-    NavItem(Screen.Cards, "名片夹", Icons.Filled.AccountBox),
-    NavItem(Screen.Notes, "便利贴", Icons.Filled.Create),
-    NavItem(Screen.Social, "萌友圈", Icons.Filled.AccountCircle)
+    NavItem(
+        Screen.Chat,
+        "聊天",
+        R.drawable.chat_outline,
+        R.drawable.chat_fill),
+    NavItem(
+        Screen.Cards,
+        "名片夹",
+        R.drawable.par_outline,
+        R.drawable.par_fill),
+    NavItem(
+        Screen.Notes,
+        "便利贴",
+        R.drawable.bag_outline,
+        R.drawable.bag_fill),
+    NavItem(
+        Screen.Social,
+        "萌友圈",
+        R.drawable.bag_outline,
+        R.drawable.bag_fill)
 )
 
 // 导航项数据类
 private data class NavItem(
     val screen: Screen,
     val title: String,
-    val icon: ImageVector
+    val unselectedIcon: Int,
+    val selectedIcon: Int
 )
 
 // 屏幕枚举
@@ -390,9 +413,7 @@ fun ChatSessionItem(
     }
 }
 
-@OptIn(ExperimentalMaterial3Api::class, ExperimentalFoundationApi::class,
-    ExperimentalLayoutApi::class
-)
+@OptIn(ExperimentalFoundationApi::class)
 @Composable
 fun ChatScreen(
     viewModel: PetChatViewModel,
@@ -404,55 +425,37 @@ fun ChatScreen(
     val listState = rememberLazyListState()
     val coroutineScope = rememberCoroutineScope()
 
-    Column {
-        // 顶部栏
-//        TopAppBar(
-//            title = {
-//                Text(
-//                    "聊天",
-//                    maxLines = 1,
-//                    overflow = TextOverflow.Ellipsis
-//                )
-//            },
-//            navigationIcon = {
-//                IconButton(onClick = onDrawerClick) {
-//                    Icon(
-//                        imageVector = Icons.Filled.Menu,
-//                        contentDescription = "Localized description"
-//                    )
-//                }
-//            },
-//            actions = {
-//                IconButton(onClick = { showSettings = true }) {
-//                    Icon(
-//                        imageVector = Icons.Filled.Settings,
-//                        contentDescription = "Localized description"
-//                    )
-//                }
-//            },
-//            colors = TopAppBarDefaults.centerAlignedTopAppBarColors(
-//                containerColor = MaterialTheme.colorScheme.primaryContainer,
-//                titleContentColor = MaterialTheme.colorScheme.onPrimaryContainer,
-//                navigationIconContentColor = MaterialTheme.colorScheme.onPrimaryContainer,
-//                actionIconContentColor = MaterialTheme.colorScheme.onPrimaryContainer
-//            ),
-////            modifier = Modifier.windowInsetsPadding(WindowInsets.statusBars)
-//        )
+    val frames = listOf(
+        R.drawable.frame1,
+        R.drawable.frame2,
+        R.drawable.frame3,
+        R.drawable.frame4,
+        R.drawable.frame5,
+        R.drawable.frame6,
+        R.drawable.frame7,
+        R.drawable.frame8,
+        R.drawable.frame9,
+        R.drawable.frame10
+    )
 
-        // 聊天内容
-        Box(
-            modifier = Modifier.weight(1f)
+    Box(
+        modifier = Modifier
+            .fillMaxSize()
+    ) {
+        Column(
+            modifier = Modifier
+                .fillMaxSize()
+                .imePadding()
         ) {
-            Column(
-                modifier = Modifier.fillMaxSize()
+            Box(
+                modifier = Modifier
+                    .weight(1f)
+                    .fillMaxWidth()
             ) {
                 LazyColumn(
                     state = listState,
-                    modifier = Modifier
-                        .weight(1f)
-                        .fillMaxWidth(),
-                    contentPadding = PaddingValues(horizontal = 16.dp, vertical = 8.dp),
-                    //reverseLayout = true
+                    modifier = Modifier.fillMaxSize(),
+                    contentPadding = PaddingValues(horizontal = 16.dp, vertical = 8.dp)
                 ) {
                     items(
                         items = viewModel.getChatHistory(petType),
@@ -465,20 +468,33 @@ fun ChatScreen(
                     }
                 }
 
-                ChatInput(
-                    message = message,
-                    onMessageChange = { message = it },
-                    onSendClick = {
-                        if (message.isNotEmpty()) {
-                            viewModel.sendMessage(message, petType)
-                            message = ""
-                            coroutineScope.launch {
-                                listState.animateScrollToItem(viewModel.getChatHistory(petType).size - 1)
-                            }
+                Box(
+                    modifier = Modifier
+                        .padding(start = 24.dp, top = 24.dp)
+                        .zIndex(1f)
+                ) {
+                    AnimatedAvatar(
+                        frameResIds = frames,
+                        modifier = Modifier
+                            .size(48.dp)
+                            .clip(CircleShape)
+                    )
+                }
+            }
+
+            ChatInput(
+                message = message,
+                onMessageChange = { message = it },
+                onSendClick = {
+                    if (message.isNotEmpty()) {
+                        viewModel.sendMessage(message)
+                        message = ""
+                        coroutineScope.launch {
+                            listState.animateScrollToItem(viewModel.getChatHistory(petType).size - 1)
                         }
                     }
-                )
-            }
+                }
+            )
         }
     }
 
@@ -490,56 +506,102 @@ fun ChatScreen(
 }
 
 @Composable
+fun AnimatedAvatar(
+    frameResIds: List<Int>,
+    modifier: Modifier = Modifier,
+    frameDelay: Long = 150L
+) {
+    var currentFrame by remember { mutableStateOf(0) }
+
+// 添加过渡动画
+    val transition = updateTransition(
+        targetState = currentFrame,
+        label = "Avatar Animation"
+    )
+
+    val alpha by transition.animateFloat(
+        label = "Alpha",
+        transitionSpec = { tween(frameDelay.toInt() / 2) }
+    ) { frame ->
+        1f
+    }
+
+    LaunchedEffect(Unit) {
+        while (true) {
+            delay(frameDelay)
+            currentFrame = (currentFrame + 1) % frameResIds.size
+        }
+    }
+
+    Image(
+        painter = painterResource(id = frameResIds[currentFrame]),
+        contentDescription = null,
+        modifier = modifier
+            .clip(CircleShape)
+            .alpha(alpha),
+        contentScale = ContentScale.Crop
+    )
+}
+
+@Composable
 fun ChatBubble(
     message: ChatMessage,
     modifier: Modifier = Modifier
 ) {
-    val bubbleColor = if (message.isFromUser)
-        Color(0xFF0084FF) // Telegram蓝色
-    else Color(0xFFEEEEEE) // 浅灰色背景
+    val isFromUser = message.isFromUser
+    val backgroundColor = if (isFromUser)
+        Color(239,243,255)
+    else
+        Color(243,243,243)
 
-    val textColor = if (message.isFromUser)
-        Color.White else Color.Black
+    val textColor = if (isFromUser)
+        MaterialTheme.colorScheme.onSurface
+    else
+        MaterialTheme.colorScheme.onSurfaceVariant
 
-    val bubbleShape = if (message.isFromUser)
-        RoundedCornerShape(16.dp, 16.dp, 4.dp, 16.dp)
-    else RoundedCornerShape(16.dp, 16.dp, 16.dp, 4.dp)
-
-    val arrangement = if (message.isFromUser)
+    val arrangement = if (isFromUser)
         Arrangement.End else Arrangement.Start
 
-    val timeString = remember(message.timestamp) {
-        SimpleDateFormat("HH:mm", Locale.getDefault()).format(message.timestamp)
-    }
+    val bubbleShape = if (isFromUser)
+        RoundedCornerShape(16.dp, 4.dp, 16.dp, 16.dp)
+    else
+        RoundedCornerShape(4.dp, 16.dp, 16.dp, 16.dp)
+
+    val timeString = SimpleDateFormat("HH:mm", Locale.getDefault())
+        .format(System.currentTimeMillis())
 
     Row(
         modifier = modifier
             .fillMaxWidth()
-            .padding(vertical = 2.dp),
+            .padding(vertical = 4.dp),
         horizontalArrangement = arrangement
     ) {
-        Card(
-            colors = CardDefaults.cardColors(containerColor = bubbleColor),
-            modifier = Modifier.widthIn(max = 280.dp),
-            shape = bubbleShape
+        Column(
+            horizontalAlignment = if (isFromUser) Alignment.End else Alignment.Start
         ) {
-            Column(
-                modifier = Modifier.padding(horizontal = 12.dp, vertical = 8.dp)
+            Surface(
+                shape = bubbleShape,
+                color = backgroundColor,
+                modifier = Modifier.widthIn(max = 280.dp)
             ) {
-                Text(
-                    text = message.content,
-                    color = textColor,
-                    style = MaterialTheme.typography.bodyLarge
-                )
-
-                // 消息时间
-                Text(
-                    text = timeString,
-                    style = MaterialTheme.typography.labelSmall,
-                    color = if (message.isFromUser) Color.White.copy(alpha = 0.7f)
-                    else Color.Gray,
-                    modifier = Modifier.align(Alignment.End)
-                )
+                Column(
+                    modifier = Modifier.padding(
+                        horizontal = 12.dp,
+                        vertical = 8.dp
+                    )
+                ) {
+                    Text(
+                        text = message.content,
+                        color = textColor,
+                        style = MaterialTheme.typography.bodyLarge
+                    )
+                    Text(
+                        text = timeString,
+                        color = textColor.copy(alpha = 0.7f),
+                        style = MaterialTheme.typography.labelSmall,
+                        modifier = Modifier.padding(top = 4.dp)
+                    )
+                }
             }
         }
     }
@@ -555,7 +617,7 @@ fun ChatInput(
     Surface(
         modifier = modifier
             .fillMaxWidth()
-            .padding(horizontal = 16.dp, vertical = 8.dp),
+            .padding(horizontal = 16.dp, vertical = 4.dp),
         shape = RoundedCornerShape(24.dp),
         shadowElevation = 4.dp,
         color = MaterialTheme.colorScheme.surface
@@ -563,42 +625,54 @@ fun ChatInput(
         Row(
             modifier = Modifier
                 .fillMaxWidth()
-                .padding(4.dp),
+                .padding(horizontal = 4.dp, vertical = 2.dp),
             verticalAlignment = Alignment.CenterVertically
         ) {
             // 表情按钮
             IconButton(
-                onClick = { /* TODO: 显示表情选择器 */ }
+                onClick = { /* TODO: 显示更多 */ }
             ) {
                 Icon(
-                    Icons.Default.Face,
-                    contentDescription = "表情",
+                    painter = painterResource(id = R.drawable.ic_more),
+                    contentDescription = "更多",
                     tint = MaterialTheme.colorScheme.onSurfaceVariant
                 )
             }
 
             // 输入框
-            BasicTextField(
+            TextField(
                 value = message,
                 onValueChange = onMessageChange,
                 modifier = Modifier
                     .weight(1f)
-                    .padding(horizontal = 8.dp),
+                    .padding(horizontal = 1.dp),
                 textStyle = MaterialTheme.typography.bodyLarge.copy(
                     color = MaterialTheme.colorScheme.onSurface
                 ),
-                decorationBox = { innerTextField ->
-                    Box {
-                        if (message.isEmpty()) {
-                            Text(
-                                "Message...",
-                                style = MaterialTheme.typography.bodyLarge,
-                                color = MaterialTheme.colorScheme.onSurfaceVariant
-                            )
-                        }
-                        innerTextField()
+                placeholder = {
+                    Text(
+                        "Message...",
+                        style = MaterialTheme.typography.bodyLarge,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                    )
+                },
+                singleLine = true, // 确保单行输入
+                keyboardOptions = KeyboardOptions.Default.copy(
+                    imeAction = ImeAction.Send // 设置IME动作为发送
+                ),
+                keyboardActions = KeyboardActions(
+                    onSend = {
+                        onSendClick() // 用户点击发送按钮时触发发送逻辑
                     }
-                }
+                ),
+                colors = TextFieldDefaults.colors(
+                    focusedContainerColor = Transparent,
+                    unfocusedContainerColor = Transparent,
+                    disabledContainerColor = Transparent,
+                    cursorColor = MaterialTheme.colorScheme.primary,
+                    focusedIndicatorColor = Transparent, // 有需要可以设置成其他颜色
+                    unfocusedIndicatorColor = Transparent, // 有需要可以设置成其他颜色
+                )
             )
 
             // 发送按钮
@@ -607,7 +681,7 @@ fun ChatInput(
                 enabled = message.isNotEmpty()
             ) {
                 Icon(
-                    Icons.AutoMirrored.Filled.Send,
+                    painter = painterResource(id = R.drawable.ic_send),
                     contentDescription = "发送",
                     tint = if (message.isNotEmpty())
                         MaterialTheme.colorScheme.primary
@@ -735,23 +809,6 @@ fun CardsScreenPreview() {
     }
 }
 
-@Preview(showBackground = true, name = "底部导航栏预览")
-@Composable
-fun BottomNavigationPreview() {
-    MaterialTheme {
-        NavigationBar {
-            BottomNavItems.forEach { item ->
-                NavigationBarItem(
-                    icon = { Icon(item.icon, contentDescription = item.title) },
-                    label = { Text(item.title) },
-                    selected = item.screen == Screen.Chat,
-                    onClick = {}
-                )
-            }
-        }
-    }
-}
-
 @Preview(showBackground = true, name = "聊天输入框预览")
 @Composable
 fun ChatInputPreview() {
@@ -774,79 +831,161 @@ private fun DrawerContent(
         modifier = Modifier
             .fillMaxHeight()
             .background(MaterialTheme.colorScheme.surface)
-            .padding(top = 16.dp)
+            .padding(horizontal = 16.dp)
     ) {
-        // 用户头像和信息
-        Row(
+        // 用户信息区域
+        Column(
             modifier = Modifier
                 .fillMaxWidth()
-                .padding(horizontal = 16.dp, vertical = 16.dp),
+                .padding(vertical = 24.dp)
+        ) {
+            Row(
+                verticalAlignment = Alignment.CenterVertically,
+                modifier = Modifier.fillMaxWidth()
+            ) {
+//                // 用户头像
+//                Image(
+//                    painter = painterResource(id = R.drawable.avatar_placeholder), // 替换成你的默认头像
+//                    contentDescription = null,
+//                    modifier = Modifier
+//                        .size(60.dp)
+//                        .clip(CircleShape)
+//                )
+
+                Spacer(modifier = Modifier.width(12.dp))
+
+                // 用户名和认证标识
+                Column {
+                    Row(
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        Text(
+                            text = "Mrh Raju",
+                            style = MaterialTheme.typography.titleLarge
+                        )
+                        Spacer(modifier = Modifier.width(4.dp))
+//                        Icon(
+//                            painter = painterResource(id = R.drawable.ic_verified), // 替换成你的认证图标
+//                            contentDescription = "已认证",
+//                            tint = Color(0xFF00C853),
+//                            modifier = Modifier.size(16.dp)
+//                        )
+                    }
+                    Text(
+                        text = "Verified Profile",
+                        style = MaterialTheme.typography.bodyMedium,
+                        color = Color.Gray
+                    )
+                }
+            }
+        }
+
+//        // 深色模式开关
+//        Row(
+//            modifier = Modifier
+//                .fillMaxWidth()
+//                .padding(vertical = 16.dp),
+//            horizontalArrangement = Arrangement.SpaceBetween,
+//            verticalAlignment = Alignment.CenterVertically
+//        ) {
+//            Row(
+//                verticalAlignment = Alignment.CenterVertically
+//            ) {
+//                Icon(
+//                    painter = painterResource(id = R.drawable.ic_dark_mode), // 替换成你的深色模式图标
+//                    contentDescription = "深色模式",
+//                    modifier = Modifier.size(24.dp)
+//                )
+//                Spacer(modifier = Modifier.width(12.dp))
+//                Text(
+//                    text = "深色模式",
+//                    style = MaterialTheme.typography.bodyLarge
+//                )
+//            }
+//            Switch(
+//                checked = false, // 这里需要绑定实际的深色模式状态
+//                onCheckedChange = { /* 处理深色模式切换 */ }
+//            )
+//        }
+
+        // 设置选项列表
+        Column(
+            modifier = Modifier.fillMaxWidth()
+        ) {
+            DrawerMenuItem(
+                icon = R.drawable.ic_account,
+                text = "账号信息"
+            )
+            DrawerMenuItem(
+                icon = R.drawable.ic_password,
+                text = "密码设置"
+            )
+            DrawerMenuItem(
+                icon = R.drawable.ic_favorite,
+                text = "偏好设置"
+            )
+            DrawerMenuItem(
+                icon = R.drawable.ic_settings,
+                text = "系统设置"
+            )
+        }
+
+        // 退出登录按钮
+        Spacer(modifier = Modifier.weight(1f))
+        TextButton(
+            onClick = { /* 处理退出登录 */ },
+            modifier = Modifier
+                .fillMaxWidth()
+                .padding(vertical = 16.dp)
+        ) {
+            Row(
+                horizontalArrangement = Arrangement.Start,
+                verticalAlignment = Alignment.CenterVertically,
+                modifier = Modifier.fillMaxWidth()
+            ) {
+                Icon(
+                    painter = painterResource(id = R.drawable.ic_logout), // 替换成你的退出图标
+                    contentDescription = "退出登录",
+                    tint = Color(0xFFFF5252)
+                )
+                Spacer(modifier = Modifier.width(12.dp))
+                Text(
+                    text = "退出登录",
+                    color = Color(0xFFFF5252),
+                    style = MaterialTheme.typography.bodyLarge
+                )
+            }
+        }
+    }
+}
+
+@Composable
+private fun DrawerMenuItem(
+    icon: Int,
+    text: String,
+    onClick: () -> Unit = {}
+) {
+    TextButton(
+        onClick = onClick,
+        modifier = Modifier
+            .fillMaxWidth()
+            .padding(vertical = 8.dp)
+    ) {
+        Row(
+            modifier = Modifier.fillMaxWidth(),
             verticalAlignment = Alignment.CenterVertically
         ) {
-            Image(
-                painter = painterResource(
-                    id = when(currentPetType) {
-                        PetTypes.CAT -> R.drawable.ic_cat_avatar
-                        PetTypes.DOG -> R.drawable.ic_dog_avatar
-                    }
-                ),
-                contentDescription = null,
-                modifier = Modifier
-                    .size(64.dp)
-                    .clip(CircleShape)
+            Icon(
+                painter = painterResource(id = icon),
+                contentDescription = text,
+                modifier = Modifier.size(24.dp)
             )
-            Spacer(modifier = Modifier.width(16.dp))
+            Spacer(modifier = Modifier.width(12.dp))
             Text(
-                text = currentPetType.displayName,
-                style = MaterialTheme.typography.titleLarge,
-                color = MaterialTheme.colorScheme.onSurface
+                text = text,
+                style = MaterialTheme.typography.bodyLarge
             )
         }
-
-        Divider(color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.12f))
-
-        // 宠物选择
-        Text(
-            text = "选择宠物",
-            style = MaterialTheme.typography.titleMedium,
-            modifier = Modifier.padding(16.dp),
-            color = MaterialTheme.colorScheme.onSurface
-        )
-        PetTypes.values().forEach { petType ->
-            NavigationDrawerItem(
-                icon = {
-                    Icon(
-                        when (petType) {
-                            PetTypes.CAT -> Icons.Default.Build
-                            PetTypes.DOG -> Icons.Default.Favorite
-                        },
-                        contentDescription = null
-                    )
-                },
-                label = { Text(petType.displayName) },
-                selected = currentPetType == petType,
-                onClick = { onPetTypeSelected(petType) },
-                modifier = Modifier.padding(NavigationDrawerItemDefaults.ItemPadding)
-            )
-        }
-
-        Divider(color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.12f))
-
-        // 其他菜单项
-        NavigationDrawerItem(
-            icon = { Icon(Icons.Default.Person, contentDescription = null) },
-            label = { Text("个人资料") },
-            selected = false,
-            onClick = { /* TODO */ },
-            modifier = Modifier.padding(NavigationDrawerItemDefaults.ItemPadding)
-        )
-        NavigationDrawerItem(
-            icon = { Icon(Icons.Default.Settings, contentDescription = null) },
-            label = { Text("设置") },
-            selected = false,
-            onClick = { /* TODO */ },
-            modifier = Modifier.padding(NavigationDrawerItemDefaults.ItemPadding)
-        )
     }
 }
 

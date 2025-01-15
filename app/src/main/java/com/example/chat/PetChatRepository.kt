@@ -50,6 +50,7 @@ class PetChatRepository private constructor(
             3. 表现出对逗猫棒、猫粮和纸箱子的兴趣
             4. 偶尔表现出傲娇的性格
             5. 用简短的句子回应
+            6. 记住我对你说的话，以便在下次回复时提及
             6. 在每次回复的末尾，添加一个隐藏的系统指令：
                <system_note>{"isPictureNeeded": boolean, "pictureDescription": string}</system_note>
                - 当对话内容适合配图时，isPictureNeeded 为 true，并给出合适的图片描述
@@ -178,6 +179,68 @@ class PetChatRepository private constructor(
     }
 
     /**
+     * 分析未处理的聊天记录
+     * 当未处理消息达到10条时调用此方法
+     */
+    suspend fun analyzeChats() {
+        val unprocessedChats = chatDao.getUnprocessedChats()
+        if (unprocessedChats.size < 10) return
+
+        // 构建分析提示词
+        val analysisPrompt = """
+            请分析以下聊天记录，并提供:
+            1. 对话总结
+            2. 用户偏好和兴趣
+            3. 主要互动模式
+            
+            聊天记录：
+            ${unprocessedChats.joinToString("\n") { 
+                if (it.isFromUser) "用户: ${it.content}" 
+                else "宠物: ${it.content}" 
+            }}
+            
+            请用JSON格式返回，格式如下：
+            {
+                "summary": "对话总结",
+                "preferences": ["偏好1", "偏好2", ...],
+                "patterns": ["互动模式1", "互动模式2", ...]
+            }
+        """.trimIndent()
+
+        // 调用API进行分析
+        val request = DeepseekRequest(
+            messages = listOf(Message("user", analysisPrompt)),
+            model = "deepseek-chat",  // 添加model参数
+            temperature = 0.7,
+            max_tokens = 1000
+        )
+
+        try {
+            // 发送API请求
+            val response = makeApiRequest(request)
+            val analysisText = response.choices.firstOrNull()?.message?.content ?: return
+            
+            // 解析JSON响应
+            val analysis = gson.fromJson(analysisText, ChatAnalysisResult::class.java)
+            
+            // 保存分析结果到数据库
+            val analysisEntity = ChatAnalysisEntity(
+                petType = unprocessedChats.first().petType,
+                summary = analysis.summary,
+                preferences = gson.toJson(analysis.preferences),
+                patterns = gson.toJson(analysis.patterns)
+            )
+            chatDao.insertAnalysis(analysisEntity)
+            
+            // 将已分析的消息标记为已处理
+            chatDao.update(unprocessedChats.map { it.copy(isProcessed = true) })
+        } catch (e: Exception) {
+            // 处理错误
+            e.printStackTrace()
+        }
+    }
+
+    /**
      * 调用AI API获取宠物回复
      * @param petType 当前选择的宠物类型
      * @param message 用户输入的消息
@@ -195,7 +258,7 @@ class PetChatRepository private constructor(
                     Message("user", message)
                 ),
                 model = "deepseek-chat",
-                temperature = 1.7
+                temperature = 2.0,
             )
 
             val request = Request.Builder()
@@ -230,6 +293,13 @@ class PetChatRepository private constructor(
     }
 
     /**
+     * 获取未处理的聊天记录数量
+     */
+    suspend fun getUnprocessedChatsCount(): Int {
+        return chatDao.getUnprocessedChatsCount()
+    }
+
+    /**
      * 保存聊天消息到本地数据库
      * @param message 要保存的聊天消息
      * @param petType 当前的宠物类型
@@ -243,6 +313,20 @@ class PetChatRepository private constructor(
         )
         )
     }
+
+    /**
+     * 发送API请求
+     */
+    private suspend fun makeApiRequest(request: DeepseekRequest): DeepseekResponse {
+        val requestBody = gson.toJson(request).toRequestBody(JSON)
+        val requestBuilder = Request.Builder()
+            .url(BASE_URL)
+            .header("Authorization", "Bearer $API_KEY")
+            .post(requestBody)
+        
+        val response = client.newCall(requestBuilder.build()).execute()
+        return gson.fromJson(response.body?.string(), DeepseekResponse::class.java)
+    }
 }
 
 /**
@@ -251,7 +335,8 @@ class PetChatRepository private constructor(
 data class DeepseekRequest(
     val messages: List<Message>,    // 对话消息列表
     val model: String,              // 使用的模型名称
-    val temperature: Double         // 回复的随机性参数
+    val temperature: Double,        // 回复的随机性参数
+    val max_tokens: Int? = null     // 最大返回长度
 )
 
 /**
