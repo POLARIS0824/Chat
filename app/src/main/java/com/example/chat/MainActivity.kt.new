@@ -10,6 +10,460 @@ import androidx.activity.result.contract.ActivityResultContracts
 import androidx.activity.result.ActivityResultLauncher
 import androidx.compose.foundation.ExperimentalFoundationApi
 import androidx.compose.foundation.Image
+import androidx.compose.foundation.background
+import androidx.compose.foundation.layout.*
+import androidx.compose.foundation.lazy.LazyColumn
+import androidx.compose.foundation.lazy.items
+import androidx.compose.foundation.lazy.rememberLazyListState
+import androidx.compose.foundation.shape.CircleShape
+import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.automirrored.filled.Send
+import androidx.compose.material.icons.filled.*
+import androidx.compose.material3.*
+import androidx.compose.runtime.*
+import androidx.compose.ui.Alignment
+import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.clip
+import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.vector.ImageVector
+import androidx.compose.ui.res.painterResource
+import androidx.compose.ui.text.style.TextOverflow
+import androidx.compose.ui.tooling.preview.Preview
+import androidx.compose.ui.unit.dp
+import androidx.core.app.ActivityCompat
+import androidx.core.content.ContextCompat
+import androidx.lifecycle.viewmodel.compose.viewModel
+import com.example.chat.model.ChatMessage
+import com.example.chat.model.ChatSession
+import com.example.chat.model.PetTypes
+import kotlinx.coroutines.launch
+
+class MainActivity : ComponentActivity() {
+    private val requestPermissionLauncher: ActivityResultLauncher<String> = registerForActivityResult(
+        ActivityResultContracts.RequestPermission()
+    ) { isGranted: Boolean ->
+        // 处理权限结果
+    }
+
+    override fun onCreate(savedInstanceState: Bundle?) {
+        super.onCreate(savedInstanceState)
+        
+        // 设置状态栏
+        WindowCompat.setDecorFitsSystemWindows(window, false)
+        window.statusBarColor = android.graphics.Color.WHITE
+        WindowInsetsControllerCompat(window, window.decorView).apply {
+            isAppearanceLightStatusBars = true
+        }
+        
+        // 检查并请求通知权限
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
+            if (ContextCompat.checkSelfPermission(
+                this,
+                Manifest.permission.POST_NOTIFICATIONS
+            ) != PackageManager.PERMISSION_GRANTED) {
+                requestPermissionLauncher.launch(Manifest.permission.POST_NOTIFICATIONS)
+            }
+        }
+
+        setContent {
+            PetChatApp()
+        }
+    }
+}
+
+@Composable
+fun PetChatApp(viewModel: PetChatViewModel = viewModel()) {
+    var selectedScreen by remember { mutableStateOf<Screen>(Screen.Chat) }
+    var showDrawer by remember { mutableStateOf(false) }
+    var currentPetType by remember { mutableStateOf(PetTypes.CAT) }
+
+    val drawerState = rememberDrawerState(initialValue = DrawerValue.Closed)
+    val scope = rememberCoroutineScope()
+
+    ModalNavigationDrawer(
+        drawerState = drawerState,
+        drawerContent = {
+            ModalDrawerSheet {
+                DrawerContent(
+                    currentPetType = currentPetType,
+                    onPetTypeSelected = { petType ->
+                        currentPetType = petType
+                        scope.launch { drawerState.close() }
+                    },
+                    onClose = { scope.launch { drawerState.close() } }
+                )
+            }
+        }
+    ) {
+        Scaffold(
+            bottomBar = {
+                NavigationBar {
+                    BottomNavItems.forEach { item ->
+                        NavigationBarItem(
+                            icon = { Icon(item.icon, contentDescription = item.title) },
+                            label = { Text(item.title) },
+                            selected = selectedScreen == item.screen,
+                            onClick = { selectedScreen = item.screen }
+                        )
+                    }
+                }
+            }
+        ) { paddingValues ->
+            Box(modifier = Modifier.padding(paddingValues)) {
+                when (selectedScreen) {
+                    Screen.Chat -> ChatScreen(
+                        viewModel = viewModel,
+                        petType = currentPetType,
+                        onDrawerClick = { scope.launch { drawerState.open() } }
+                    )
+                    Screen.Cards -> CardsScreen()
+                }
+            }
+        }
+    }
+}
+
+@OptIn(ExperimentalMaterial3Api::class, ExperimentalFoundationApi::class)
+@Composable
+fun ChatScreen(
+    viewModel: PetChatViewModel,
+    petType: PetTypes,
+    onDrawerClick: () -> Unit
+) {
+    var showSettings by remember { mutableStateOf(false) }
+    var message by remember { mutableStateOf("") }
+    val listState = rememberLazyListState()
+    val scope = rememberCoroutineScope()
+    
+    // 监听消息列表变化，自动滚动到底部
+    LaunchedEffect(viewModel.getChatHistory(petType).size) {
+        if (viewModel.getChatHistory(petType).isNotEmpty()) {
+            listState.animateScrollToItem(viewModel.getChatHistory(petType).size - 1)
+        }
+    }
+
+    Column {
+        // 状态栏占位
+        Spacer(
+            modifier = Modifier
+                .windowInsetsPadding(WindowInsets.statusBars)
+                .fillMaxWidth()
+                .background(Color.White)
+        )
+        
+        // 顶部栏
+        Surface(
+            color = Color.White,
+            shadowElevation = 1.dp
+        ) {
+            Box(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .height(56.dp)
+            ) {
+                IconButton(
+                    onClick = onDrawerClick,
+                    modifier = Modifier.align(Alignment.CenterStart)
+                ) {
+                    Icon(
+                        Icons.Default.Menu,
+                        contentDescription = "菜单",
+                        tint = Color.Black
+                    )
+                }
+                
+                Text(
+                    text = "聊天",
+                    style = MaterialTheme.typography.titleMedium,
+                    color = Color.Black,
+                    modifier = Modifier.align(Alignment.Center)
+                )
+                
+                IconButton(
+                    onClick = { showSettings = true },
+                    modifier = Modifier.align(Alignment.CenterEnd)
+                ) {
+                    Icon(
+                        Icons.Default.Settings,
+                        contentDescription = "设置",
+                        tint = Color.Black
+                    )
+                }
+            }
+        }
+
+        // 聊天内容
+        Box(
+            modifier = Modifier.weight(1f)
+        ) {
+            Column(
+                modifier = Modifier.fillMaxSize()
+            ) {
+                LazyColumn(
+                    state = listState,
+                    modifier = Modifier
+                        .weight(1f)
+                        .fillMaxWidth(),
+                    contentPadding = PaddingValues(horizontal = 16.dp, vertical = 8.dp),
+                    reverseLayout = false
+                ) {
+                    items(
+                        items = viewModel.getChatHistory(petType),
+                        key = { it.hashCode() }
+                    ) { message ->
+                        ChatBubble(
+                            message = message,
+                            modifier = Modifier.animateItemPlacement()
+                        )
+                    }
+                }
+
+                ChatInput(
+                    message = message,
+                    onMessageChange = { message = it },
+                    onSendClick = {
+                        if (message.isNotEmpty()) {
+                            viewModel.sendMessage(message, petType)
+                            message = ""
+                            // 发送消息后滚动到底部
+                            scope.launch {
+                                val size = viewModel.getChatHistory(petType).size
+                                if (size > 0) {
+                                    listState.animateScrollToItem(size - 1)
+                                }
+                            }
+                        }
+                    }
+                )
+            }
+        }
+    }
+
+    if (showSettings) {
+        SettingsDialog(
+            onDismiss = { showSettings = false }
+        )
+    }
+}
+
+@Composable
+fun ChatBubble(
+    message: ChatMessage,
+    modifier: Modifier = Modifier
+) {
+    Column(
+        modifier = modifier
+            .fillMaxWidth()
+            .padding(vertical = 4.dp)
+    ) {
+        Box(
+            modifier = Modifier.fillMaxWidth(),
+            contentAlignment = if (message.isFromUser) Alignment.CenterEnd else Alignment.CenterStart
+        ) {
+            Surface(
+                shape = RoundedCornerShape(12.dp),
+                color = if (message.isFromUser) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.surfaceVariant,
+                modifier = Modifier.widthIn(max = 300.dp)
+            ) {
+                Text(
+                    text = message.content,
+                    modifier = Modifier.padding(horizontal = 12.dp, vertical = 8.dp),
+                    color = if (message.isFromUser) Color.White else Color.Black
+                )
+            }
+        }
+    }
+}
+
+@OptIn(ExperimentalMaterial3Api::class)
+@Composable
+fun ChatInput(
+    message: String,
+    onMessageChange: (String) -> Unit,
+    onSendClick: () -> Unit,
+    modifier: Modifier = Modifier
+) {
+    Surface(
+        modifier = modifier,
+        color = MaterialTheme.colorScheme.surface,
+        tonalElevation = 2.dp
+    ) {
+        Row(
+            modifier = Modifier
+                .padding(horizontal = 16.dp, vertical = 8.dp)
+                .navigationBarsPadding(),
+            verticalAlignment = Alignment.CenterVertically
+        ) {
+            TextField(
+                value = message,
+                onValueChange = onMessageChange,
+                modifier = Modifier
+                    .weight(1f)
+                    .padding(end = 8.dp),
+                colors = TextFieldDefaults.colors(
+                    focusedContainerColor = Color.Transparent,
+                    unfocusedContainerColor = Color.Transparent,
+                    disabledContainerColor = Color.Transparent,
+                ),
+                placeholder = { Text("输入消息...") },
+                maxLines = 4
+            )
+            
+            IconButton(
+                onClick = onSendClick,
+                enabled = message.isNotEmpty()
+            ) {
+                Icon(
+                    Icons.AutoMirrored.Filled.Send,
+                    contentDescription = "发送",
+                    tint = if (message.isNotEmpty()) 
+                        MaterialTheme.colorScheme.primary 
+                    else 
+                        MaterialTheme.colorScheme.onSurfaceVariant
+                )
+            }
+        }
+    }
+}
+
+@Composable
+fun CardsScreen() {
+    Box(
+        modifier = Modifier.fillMaxSize(),
+        contentAlignment = Alignment.Center
+    ) {
+        Text("名片夹功能开发中...")
+    }
+}
+
+@Composable
+fun DrawerContent(
+    currentPetType: PetTypes,
+    onPetTypeSelected: (PetTypes) -> Unit,
+    onClose: () -> Unit
+) {
+    Column(
+        modifier = Modifier
+            .fillMaxHeight()
+            .width(300.dp)
+    ) {
+        Box(
+            modifier = Modifier
+                .fillMaxWidth()
+                .height(56.dp)
+                .padding(horizontal = 16.dp),
+            contentAlignment = Alignment.CenterStart
+        ) {
+            Text(
+                text = "选择宠物",
+                style = MaterialTheme.typography.titleMedium
+            )
+        }
+        
+        Divider()
+        
+        DrawerMenuItem(
+            icon = Icons.Default.Face,
+            text = "猫咪",
+            selected = currentPetType == PetTypes.CAT,
+            onClick = { onPetTypeSelected(PetTypes.CAT) }
+        )
+        
+        DrawerMenuItem(
+            icon = Icons.Default.Favorite,
+            text = "狗狗",
+            selected = currentPetType == PetTypes.DOG,
+            onClick = { onPetTypeSelected(PetTypes.DOG) }
+        )
+    }
+}
+
+@Composable
+fun DrawerMenuItem(
+    icon: ImageVector,
+    text: String,
+    selected: Boolean = false,
+    onClick: () -> Unit
+) {
+    Surface(
+        modifier = Modifier.fillMaxWidth(),
+        color = if (selected) MaterialTheme.colorScheme.secondaryContainer else Color.Transparent,
+        onClick = onClick
+    ) {
+        Row(
+            modifier = Modifier
+                .padding(horizontal = 16.dp, vertical = 12.dp),
+            verticalAlignment = Alignment.CenterVertically
+        ) {
+            Icon(
+                imageVector = icon,
+                contentDescription = text,
+                tint = if (selected) 
+                    MaterialTheme.colorScheme.onSecondaryContainer 
+                else 
+                    MaterialTheme.colorScheme.onSurfaceVariant
+            )
+            Spacer(modifier = Modifier.width(12.dp))
+            Text(
+                text = text,
+                style = MaterialTheme.typography.bodyLarge,
+                color = if (selected) 
+                    MaterialTheme.colorScheme.onSecondaryContainer 
+                else 
+                    MaterialTheme.colorScheme.onSurfaceVariant
+            )
+        }
+    }
+}
+
+@Composable
+fun SettingsDialog(
+    onDismiss: () -> Unit
+) {
+    AlertDialog(
+        onDismissRequest = onDismiss,
+        title = { Text("设置") },
+        text = { Text("设置功能开发中...") },
+        confirmButton = {
+            TextButton(onClick = onDismiss) {
+                Text("确定")
+            }
+        }
+    )
+}
+
+private val BottomNavItems = listOf(
+    NavItem(Screen.Chat, "聊天", Icons.Filled.Email),
+    NavItem(Screen.Cards, "名片夹", Icons.Filled.AccountBox)
+)
+
+data class NavItem(
+    val screen: Screen,
+    val title: String,
+    val icon: ImageVector
+)
+
+enum class Screen {
+    Chat, Cards
+}
+
+
+
+
+
+package com.example.chat
+
+import android.Manifest
+import android.content.pm.PackageManager
+import android.os.Build
+import android.os.Bundle
+import androidx.activity.ComponentActivity
+import androidx.activity.compose.setContent
+import androidx.activity.result.contract.ActivityResultContracts
+import androidx.activity.result.ActivityResultLauncher
+import androidx.compose.foundation.ExperimentalFoundationApi
+import androidx.compose.foundation.Image
 import androidx.core.app.ActivityCompat
 import androidx.core.content.ContextCompat
 import androidx.core.content.pm.PackageInfoCompat
@@ -72,8 +526,9 @@ import androidx.compose.ui.unit.dp
 import androidx.core.view.WindowInsetsControllerCompat
 import kotlinx.coroutines.launch
 import androidx.compose.runtime.rememberCoroutineScope
-import androidx.compose.foundation.lazy.rememberLazyListState
 //import androidx.compose.material.icons.filled.Pets
+
+
 
 class MainActivity : ComponentActivity() {
     private val requestPermissionLauncher: ActivityResultLauncher<String> = registerForActivityResult(
@@ -85,21 +540,27 @@ class MainActivity : ComponentActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
 
-        // 设置沉浸式状态栏
+        // 设置状态栏
         WindowCompat.setDecorFitsSystemWindows(window, false)
+
+        // 设置状态栏颜色为白色，图标为深色
+        window.statusBarColor = android.graphics.Color.WHITE
+        WindowInsetsControllerCompat(window, window.decorView).apply {
+            isAppearanceLightStatusBars = true // 状态栏图标设置为深色
+        }
 
         // 检查并请求通知权限
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
             if (ContextCompat.checkSelfPermission(
-                    this,
-                    Manifest.permission.POST_NOTIFICATIONS
-                ) != PackageManager.PERMISSION_GRANTED) {
+                this,
+                Manifest.permission.POST_NOTIFICATIONS
+            ) != PackageManager.PERMISSION_GRANTED) {
                 requestPermissionLauncher.launch(Manifest.permission.POST_NOTIFICATIONS)
             }
         }
 
-        lifecycleScope.launch {
-            // 可以在这里安全地调用挂起函数
+        lifecycleScope.launch {  // 使用 lifecycleScope 创建协程
+            // 在这里可以安全地调用挂起函数
         }
 
         setContent {
@@ -141,99 +602,9 @@ fun PetChatApp(viewModel: PetChatViewModel = viewModel()) {
             },
             drawerState = drawerState,
             gesturesEnabled = true,
-            scrimColor = Color.Black.copy(alpha = 0.32f) // Material 3 的标准值
+            scrimColor = Color.Black.copy(alpha = 0.32f)
         ) {
             Scaffold(
-                topBar = {
-                    when (currentScreen) {
-                        Screen.Chat -> {
-                            TopAppBar(
-                                title = { Text("聊天") },
-                                navigationIcon = {
-                                    IconButton(onClick = {
-                                        scope.launch { drawerState.open() }
-                                    }) {
-                                        Icon(Icons.Filled.Menu, contentDescription = "打开抽屉菜单")
-                                    }
-                                },
-                                actions = {
-                                    IconButton(onClick = { /* 打开设置 */ }) {
-                                        Icon(Icons.Filled.Settings, contentDescription = "设置")
-                                    }
-                                },
-                                colors = TopAppBarDefaults.topAppBarColors(
-                                    containerColor = MaterialTheme.colorScheme.primaryContainer,
-                                    titleContentColor = MaterialTheme.colorScheme.onPrimaryContainer,
-                                    navigationIconContentColor = MaterialTheme.colorScheme.onPrimaryContainer,
-                                    actionIconContentColor = MaterialTheme.colorScheme.onPrimaryContainer
-                                )
-                            )
-                        }
-                        Screen.Cards -> {
-                            TopAppBar(
-                                title = { Text("名片夹") },
-                                navigationIcon = {
-                                    IconButton(onClick = {
-                                        // 处理返回或其他导航
-                                        // 例如，返回到聊天界面
-                                        currentScreen = Screen.Chat
-                                    }) {
-                                        Icon(Icons.Filled.ArrowBack, contentDescription = "返回")
-                                    }
-                                },
-                                actions = { /* 其他操作 */ },
-                                colors = TopAppBarDefaults.topAppBarColors(
-                                    containerColor = MaterialTheme.colorScheme.primaryContainer,
-                                    titleContentColor = MaterialTheme.colorScheme.onPrimaryContainer,
-                                    navigationIconContentColor = MaterialTheme.colorScheme.onPrimaryContainer,
-                                    actionIconContentColor = MaterialTheme.colorScheme.onPrimaryContainer
-                                )
-                            )
-                        }
-                        Screen.Notes -> {
-                            TopAppBar(
-                                title = { Text("便利贴") },
-                                navigationIcon = {
-                                    IconButton(onClick = {
-                                        // 处理返回或其他导航
-                                        // 例如，返回到聊天界面
-                                        currentScreen = Screen.Chat
-                                    }) {
-                                        Icon(Icons.Filled.ArrowBack, contentDescription = "返回")
-                                    }
-                                },
-                                actions = { /* 其他操作 */ },
-                                colors = TopAppBarDefaults.topAppBarColors(
-                                    containerColor = MaterialTheme.colorScheme.primaryContainer,
-                                    titleContentColor = MaterialTheme.colorScheme.onPrimaryContainer,
-                                    navigationIconContentColor = MaterialTheme.colorScheme.onPrimaryContainer,
-                                    actionIconContentColor = MaterialTheme.colorScheme.onPrimaryContainer
-                                )
-                            )
-                        }
-                        Screen.Social -> {
-                            TopAppBar(
-                                title = { Text("萌友圈") },
-                                navigationIcon = {
-                                    IconButton(onClick = {
-                                        // 处理返回或其他导航
-                                        // 例如，返回到聊天界面
-                                        currentScreen = Screen.Chat
-                                    }) {
-                                        Icon(Icons.Filled.ArrowBack, contentDescription = "返回")
-                                    }
-                                },
-                                actions = { /* 其他操作 */ },
-                                colors = TopAppBarDefaults.topAppBarColors(
-                                    containerColor = MaterialTheme.colorScheme.primaryContainer,
-                                    titleContentColor = MaterialTheme.colorScheme.onPrimaryContainer,
-                                    navigationIconContentColor = MaterialTheme.colorScheme.onPrimaryContainer,
-                                    actionIconContentColor = MaterialTheme.colorScheme.onPrimaryContainer
-                                )
-                            )
-                        }
-                    }
-                },
                 bottomBar = {
                     NavigationBar {
                         BottomNavItems.forEach { item ->
@@ -297,27 +668,11 @@ fun ChatSessionList(
     Scaffold(
         topBar = {
             TopAppBar(
-                title = {
-                    Text(
-                        "Pet Chat",
-                        maxLines = 1,
-                        overflow = TextOverflow.Ellipsis
-                    )
-                },
-                colors = TopAppBarDefaults.largeTopAppBarColors(
-                    containerColor = MaterialTheme.colorScheme.primaryContainer,
-                    titleContentColor = MaterialTheme.colorScheme.onPrimaryContainer,
-                    navigationIconContentColor = MaterialTheme.colorScheme.onPrimaryContainer
-                ),
-//                modifier = Modifier.windowInsetsPadding(WindowInsets.statusBars),
-                navigationIcon = {
-                    IconButton(onClick = onDrawerClick) {
-                        Icon(
-                            imageVector = Icons.Filled.Menu,
-                            contentDescription = "Localized description"
-                        )
-                    }
-                }
+                title = { Text("Pet Chat") },
+                colors = TopAppBarDefaults.topAppBarColors(
+                    containerColor = MaterialTheme.colorScheme.primary,
+                    titleContentColor = Color.White
+                )
             )
         }
     ) { padding ->
@@ -390,9 +745,7 @@ fun ChatSessionItem(
     }
 }
 
-@OptIn(ExperimentalMaterial3Api::class, ExperimentalFoundationApi::class,
-    ExperimentalLayoutApi::class
-)
+@OptIn(ExperimentalMaterial3Api::class, ExperimentalFoundationApi::class)
 @Composable
 fun ChatScreen(
     viewModel: PetChatViewModel,
@@ -401,43 +754,59 @@ fun ChatScreen(
 ) {
     var showSettings by remember { mutableStateOf(false) }
     var message by remember { mutableStateOf("") }
-    val listState = rememberLazyListState()
-    val coroutineScope = rememberCoroutineScope()
 
     Column {
+        // 状态栏占位
+        Spacer(
+            modifier = Modifier
+                .windowInsetsPadding(WindowInsets.statusBars)
+                .fillMaxWidth()
+                .background(White)
+        )
+
         // 顶部栏
-//        TopAppBar(
-//            title = {
-//                Text(
-//                    "聊天",
-//                    maxLines = 1,
-//                    overflow = TextOverflow.Ellipsis
-//                )
-//            },
-//            navigationIcon = {
-//                IconButton(onClick = onDrawerClick) {
-//                    Icon(
-//                        imageVector = Icons.Filled.Menu,
-//                        contentDescription = "Localized description"
-//                    )
-//                }
-//            },
-//            actions = {
-//                IconButton(onClick = { showSettings = true }) {
-//                    Icon(
-//                        imageVector = Icons.Filled.Settings,
-//                        contentDescription = "Localized description"
-//                    )
-//                }
-//            },
-//            colors = TopAppBarDefaults.centerAlignedTopAppBarColors(
-//                containerColor = MaterialTheme.colorScheme.primaryContainer,
-//                titleContentColor = MaterialTheme.colorScheme.onPrimaryContainer,
-//                navigationIconContentColor = MaterialTheme.colorScheme.onPrimaryContainer,
-//                actionIconContentColor = MaterialTheme.colorScheme.onPrimaryContainer
-//            ),
-////            modifier = Modifier.windowInsetsPadding(WindowInsets.statusBars)
-//        )
+        Surface(
+            color = White,
+            shadowElevation = 1.dp
+        ) {
+            Box(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .height(56.dp)
+            ) {
+                // 左侧菜单按钮
+                IconButton(
+                    onClick = onDrawerClick,
+                    modifier = Modifier.align(Alignment.CenterStart)
+                ) {
+                    Icon(
+                        Icons.Default.Menu,
+                        contentDescription = "菜单",
+                        tint = Black
+                    )
+                }
+
+                // 中间标题
+                Text(
+                    text = "聊天",
+                    style = MaterialTheme.typography.titleMedium,
+                    color = Black,
+                    modifier = Modifier.align(Alignment.Center)
+                )
+
+                // 右侧设置按钮
+                IconButton(
+                    onClick = { showSettings = true },
+                    modifier = Modifier.align(Alignment.CenterEnd)
+                ) {
+                    Icon(
+                        Icons.Default.Settings,
+                        contentDescription = "设置",
+                        tint = Black
+                    )
+                }
+            }
+        }
 
         // 聊天内容
         Box(
@@ -447,12 +816,11 @@ fun ChatScreen(
                 modifier = Modifier.fillMaxSize()
             ) {
                 LazyColumn(
-                    state = listState,
                     modifier = Modifier
                         .weight(1f)
                         .fillMaxWidth(),
                     contentPadding = PaddingValues(horizontal = 16.dp, vertical = 8.dp),
-                    //reverseLayout = true
+                    reverseLayout = true
                 ) {
                     items(
                         items = viewModel.getChatHistory(petType),
@@ -472,9 +840,6 @@ fun ChatScreen(
                         if (message.isNotEmpty()) {
                             viewModel.sendMessage(message, petType)
                             message = ""
-                            coroutineScope.launch {
-                                listState.animateScrollToItem(viewModel.getChatHistory(petType).size - 1)
-                            }
                         }
                     }
                 )
@@ -624,22 +989,14 @@ fun CardsScreen() {
     Column(
         modifier = Modifier.fillMaxSize()
     ) {
-//        // 顶部栏
-//        TopAppBar(
-//            title = {
-//                Text(
-//                    "名片夹",
-//                    maxLines = 1,
-//                    overflow = TextOverflow.Ellipsis
-//                )
-//            },
-//            colors = TopAppBarDefaults.largeTopAppBarColors(
-//                containerColor = MaterialTheme.colorScheme.primaryContainer,
-//                titleContentColor = MaterialTheme.colorScheme.onPrimaryContainer,
-//                navigationIconContentColor = MaterialTheme.colorScheme.onPrimaryContainer
-//            ),
-////            modifier = Modifier.windowInsetsPadding(WindowInsets.statusBars),
-//        )
+        // 顶部栏
+        TopAppBar(
+            title = { Text("名片夹") },
+            colors = TopAppBarDefaults.topAppBarColors(
+                containerColor = MaterialTheme.colorScheme.primary,
+                titleContentColor = Color.White
+            )
+        )
 
         // 照片和基础信息区域
         Row(
@@ -773,6 +1130,7 @@ private fun DrawerContent(
     Column(
         modifier = Modifier
             .fillMaxHeight()
+            .width(280.dp)
             .background(MaterialTheme.colorScheme.surface)
             .padding(top = 16.dp)
     ) {
@@ -798,55 +1156,77 @@ private fun DrawerContent(
             Spacer(modifier = Modifier.width(16.dp))
             Text(
                 text = currentPetType.displayName,
-                style = MaterialTheme.typography.titleLarge,
-                color = MaterialTheme.colorScheme.onSurface
+                style = MaterialTheme.typography.titleLarge
             )
         }
 
-        Divider(color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.12f))
+        Divider()
 
         // 宠物选择
         Text(
             text = "选择宠物",
             style = MaterialTheme.typography.titleMedium,
-            modifier = Modifier.padding(16.dp),
-            color = MaterialTheme.colorScheme.onSurface
+            modifier = Modifier.padding(16.dp)
         )
         PetTypes.values().forEach { petType ->
-            NavigationDrawerItem(
-                icon = {
-                    Icon(
-                        when (petType) {
-                            PetTypes.CAT -> Icons.Default.Build
-                            PetTypes.DOG -> Icons.Default.Favorite
-                        },
-                        contentDescription = null
-                    )
+            DrawerMenuItem(
+                icon = when(petType) {
+                    PetTypes.CAT -> Icons.Default.Build
+                    PetTypes.DOG -> Icons.Default.Favorite
                 },
-                label = { Text(petType.displayName) },
+                text = petType.displayName,
                 selected = currentPetType == petType,
-                onClick = { onPetTypeSelected(petType) },
-                modifier = Modifier.padding(NavigationDrawerItemDefaults.ItemPadding)
+                onClick = { onPetTypeSelected(petType) }
             )
         }
 
-        Divider(color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.12f))
+        Divider()
 
         // 其他菜单项
-        NavigationDrawerItem(
-            icon = { Icon(Icons.Default.Person, contentDescription = null) },
-            label = { Text("个人资料") },
-            selected = false,
-            onClick = { /* TODO */ },
-            modifier = Modifier.padding(NavigationDrawerItemDefaults.ItemPadding)
+        DrawerMenuItem(
+            icon = Icons.Default.Person,
+            text = "个人资料",
+            onClick = { /* TODO */ }
         )
-        NavigationDrawerItem(
-            icon = { Icon(Icons.Default.Settings, contentDescription = null) },
-            label = { Text("设置") },
-            selected = false,
-            onClick = { /* TODO */ },
-            modifier = Modifier.padding(NavigationDrawerItemDefaults.ItemPadding)
+        DrawerMenuItem(
+            icon = Icons.Default.Settings,
+            text = "设置",
+            onClick = { /* TODO */ }
         )
+    }
+}
+
+@Composable
+private fun DrawerMenuItem(
+    icon: ImageVector,
+    text: String,
+    selected: Boolean = false,
+    onClick: () -> Unit
+) {
+    Surface(
+        onClick = onClick,
+        color = if (selected) MaterialTheme.colorScheme.primaryContainer
+                else MaterialTheme.colorScheme.surface,
+        modifier = Modifier.fillMaxWidth()
+    ) {
+        Row(
+            modifier = Modifier
+                .padding(vertical = 12.dp, horizontal = 16.dp),
+            verticalAlignment = Alignment.CenterVertically
+        ) {
+            Icon(
+                imageVector = icon,
+                contentDescription = null,
+                tint = if (selected) MaterialTheme.colorScheme.primary
+                       else MaterialTheme.colorScheme.onSurface
+            )
+            Spacer(modifier = Modifier.width(32.dp))
+            Text(
+                text = text,
+                color = if (selected) MaterialTheme.colorScheme.primary
+                        else MaterialTheme.colorScheme.onSurface
+            )
+        }
     }
 }
 

@@ -49,30 +49,29 @@ class PetChatViewModel(application: Application) : AndroidViewModel(application)
      * 发送新消息
      * 处理用户输入，获取AI响应，并更新UI状态
      */
-    fun sendMessage(content: String) {
+    fun sendMessage(content: String, petType: PetTypes) {
         viewModelScope.launch {
-            // 添加并保存用户消息
-            val userMessage = ChatMessage(content, true)
+            // 添加用户消息
+            val userMessage = ChatMessage(
+                content = content,
+                isFromUser = true,
+                petType = petType
+            )
             chatHistory = chatHistory + userMessage
-            repository.saveChatMessage(userMessage, currentPetType)
+            repository.saveChatMessage(userMessage, petType)
 
             try {
-                // 获取AI响应和图片信息
-                val (response, pictureInfo) = repository.getPetResponseWithPictureInfo(currentPetType, content)
-                val petMessage = ChatMessage(response, false)
+                // 获取AI响应
+                val (response, pictureInfo) = repository.getPetResponseWithPictureInfo(petType, content)
+                val petMessage = ChatMessage(
+                    content = response,
+                    isFromUser = false,
+                    petType = petType
+                )
                 chatHistory = chatHistory + petMessage
-                lastPictureInfo = pictureInfo
-                // 保存AI响应
-                repository.saveChatMessage(petMessage, currentPetType)
-                
-                // 处理累积的聊天记录
-                repository.processUnprocessedChats()
+                repository.saveChatMessage(petMessage, petType)
             } catch (e: Exception) {
-                // 处理错误情况
-                val errorMessage = ChatMessage("抱歉，我现在有点累了...", false)
-                chatHistory = chatHistory + errorMessage
-                lastPictureInfo = null
-                repository.saveChatMessage(errorMessage, currentPetType)
+                // 处理错误
             }
         }
     }
@@ -85,5 +84,9 @@ class PetChatViewModel(application: Application) : AndroidViewModel(application)
         val info = lastPictureInfo
         lastPictureInfo = null
         return info
+    }
+
+    fun getChatHistory(petType: PetTypes): List<ChatMessage> {
+        return chatHistory.filter { it.petType == petType }
     }
 }

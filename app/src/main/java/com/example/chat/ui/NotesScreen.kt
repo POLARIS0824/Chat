@@ -89,6 +89,7 @@ private fun FilterChips(
     ) {
         FilterChip(
             selected = selectedType == null,
+            
             onClick = { onFilterSelected(null) },
             label = { Text("全部") }
         )

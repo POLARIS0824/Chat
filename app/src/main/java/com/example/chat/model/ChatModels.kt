@@ -14,7 +14,9 @@ enum class PetTypes(val displayName: String) {
  */
 data class ChatMessage(
     val content: String,    // 消息内容
-    val isFromUser: Boolean // 是否为用户消息
+    val isFromUser: Boolean, // 是否为用户消息
+    val petType: PetTypes,  // 宠物类型
+    val timestamp: Long = System.currentTimeMillis() // 消息时间戳
 )
 
 /**

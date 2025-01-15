@@ -36,7 +36,7 @@ class PetChatRepository private constructor(
     }
 
     private val JSON = "application/json; charset=utf-8".toMediaType()
-    private val API_KEY = "sk-6075322c43524e5da2b50a4dc2760e15"  // API密钥
+    private val API_KEY = "sk-df188b66229341b6aa6886c4d1853ff6"  // API密钥
     private val BASE_URL = "https://api.deepseek.com/v1/chat/completions"  // API基础URL
 
     /**
