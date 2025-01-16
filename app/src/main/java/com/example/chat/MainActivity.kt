@@ -42,10 +42,17 @@ import java.text.SimpleDateFormat
 import android.app.Application
 import android.view.WindowManager
 import androidx.compose.animation.Crossfade
+import androidx.compose.animation.core.RepeatMode
+import androidx.compose.animation.core.StartOffset
 import androidx.compose.animation.core.animateFloat
+import androidx.compose.animation.core.infiniteRepeatable
+import androidx.compose.animation.core.keyframes
+import androidx.compose.animation.core.rememberInfiniteTransition
 import androidx.compose.animation.core.tween
 import androidx.compose.animation.core.updateTransition
+import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.background
+import androidx.compose.foundation.clickable
 import androidx.compose.material.icons.filled.Menu
 import androidx.compose.material.icons.filled.Settings
 import androidx.compose.ui.tooling.preview.PreviewParameter
@@ -62,6 +69,7 @@ import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.foundation.text.KeyboardActions
 import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.ui.draw.alpha
+import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.text.input.ImeAction
 import androidx.compose.ui.zIndex
@@ -311,62 +319,6 @@ private enum class Screen {
     Chat, Cards, Notes, Social
 }
 
-@OptIn(ExperimentalMaterial3Api::class)
-@Composable
-fun ChatSessionList(
-    onDrawerClick: () -> Unit,
-    onSessionSelected: (ChatSession) -> Unit
-) {
-    Scaffold(
-        topBar = {
-            TopAppBar(
-                title = {
-                    Text(
-                        "Pet Chat",
-                        maxLines = 1,
-                        overflow = TextOverflow.Ellipsis
-                    )
-                },
-                colors = TopAppBarDefaults.largeTopAppBarColors(
-                    containerColor = MaterialTheme.colorScheme.primaryContainer,
-                    titleContentColor = MaterialTheme.colorScheme.onPrimaryContainer,
-                    navigationIconContentColor = MaterialTheme.colorScheme.onPrimaryContainer
-                ),
-//                modifier = Modifier.windowInsetsPadding(WindowInsets.statusBars),
-                navigationIcon = {
-                    IconButton(onClick = onDrawerClick) {
-                        Icon(
-                            imageVector = Icons.Filled.Menu,
-                            contentDescription = "Localized description"
-                        )
-                    }
-                }
-            )
-        }
-    ) { padding ->
-        LazyColumn(
-            modifier = Modifier
-                .fillMaxSize()
-                .padding(padding)
-        ) {
-            items(PetTypes.values()) { petType ->
-                ChatSessionItem(
-                    session = ChatSession(
-                        id = petType.name,
-                        petType = petType,
-                        displayName = petType.displayName,
-                        avatarRes = when(petType) {
-                            PetTypes.CAT -> R.drawable.ic_cat_avatar
-                            PetTypes.DOG -> R.drawable.ic_dog_avatar
-                        }
-                    ),
-                    onClick = { onSessionSelected(it) }
-                )
-            }
-        }
-    }
-}
-
 @Composable
 fun ChatSessionItem(
     session: ChatSession,
@@ -413,6 +365,36 @@ fun ChatSessionItem(
     }
 }
 
+@Preview(showBackground = true)
+@Composable
+fun ChatSessionItemPreview() {
+    MaterialTheme {
+        ChatSessionItem(
+            session = ChatSession(
+                id = "cat",
+                petType = PetTypes.CAT, // Assuming you have the PetTypes enum from the previous example
+                displayName = "Cat Session",
+                avatarRes = R.drawable.ic_cat_avatar, // Replace with your actual drawable
+                lastMessage = "This is a preview message."
+            ),
+            onClick = { session -> println("Clicked on ${session.displayName}") }
+        )
+    }
+}
+
+// Dummy data for the preview (You can reuse from previous example or define new)
+enum class PetTypes {
+    CAT, DOG
+}
+
+data class ChatSession(
+    val id: String,
+    val petType: PetTypes,
+    val displayName: String,
+    val avatarRes: Int,
+    val lastMessage: String = "" // Added lastMessage for this preview
+)
+
 @OptIn(ExperimentalFoundationApi::class)
 @Composable
 fun ChatScreen(
@@ -438,50 +420,37 @@ fun ChatScreen(
         R.drawable.frame10
     )
 
-    Box(
-        modifier = Modifier
+    Box(modifier = Modifier
             .fillMaxSize()
-    ) {
-        Column(
-            modifier = Modifier
-                .fillMaxSize()
-                .imePadding()
+            .imePadding()
         ) {
-            Box(
-                modifier = Modifier
-                    .weight(1f)
-                    .fillMaxWidth()
-            ) {
-                LazyColumn(
-                    state = listState,
-                    modifier = Modifier.fillMaxSize(),
-                    contentPadding = PaddingValues(horizontal = 16.dp, vertical = 8.dp)
-                ) {
-                    items(
-                        items = viewModel.getChatHistory(petType),
-                        key = { it.hashCode() }
-                    ) { message ->
-                        ChatBubble(
-                            message = message,
-                            modifier = Modifier.animateItemPlacement()
-                        )
-                    }
-                }
-
-                Box(
-                    modifier = Modifier
-                        .padding(start = 24.dp, top = 24.dp)
-                        .zIndex(1f)
-                ) {
-                    AnimatedAvatar(
-                        frameResIds = frames,
-                        modifier = Modifier
-                            .size(48.dp)
-                            .clip(CircleShape)
-                    )
-                }
+        LazyColumn(
+            state = listState,
+            modifier = Modifier
+                .fillMaxSize(),
+            contentPadding = PaddingValues(horizontal = 16.dp, vertical = 8.dp)
+        ) {
+            items(
+                items = viewModel.getChatHistory(petType),
+                key = { it.hashCode() }
+            ) { message ->
+                ChatBubble(
+                    message = message,
+                    modifier = Modifier.animateItemPlacement()
+                )
             }
+        }
 
+        AnimatedAvatar(
+            frameResIds = frames,
+            modifier = Modifier
+                .padding(start = 24.dp, top = 24.dp)
+                .size(48.dp)
+                .clip(CircleShape)
+                .zIndex(1f) // 保证头像在顶部
+        )
+
+        Column(modifier = Modifier.align(Alignment.BottomCenter)) {
             ChatInput(
                 message = message,
                 onMessageChange = { message = it },
@@ -493,7 +462,8 @@ fun ChatScreen(
                             listState.animateScrollToItem(viewModel.getChatHistory(petType).size - 1)
                         }
                     }
-                }
+                },
+                isLoading = viewModel.isLoading
             )
         }
     }
@@ -608,89 +578,196 @@ fun ChatBubble(
 }
 
 @Composable
+fun LoadingAnimation(
+    modifier: Modifier = Modifier,
+    dotSize: Float = 36f,
+    dotColor: Color = MaterialTheme.colorScheme.primary,
+    animationDuration: Int = 1000, // Total duration for one up-and-down cycle
+    delayBetweenDots: Int = 200    // Delay between the start of each dot's animation
+) {
+    val maxOffset = 8f // Maximum vertical offset for the animation
+
+    // Remember the animation state for each dot
+    val infiniteTransitions = (0 until 4).map { rememberInfiniteTransition(label = "") }
+    val offsets = infiniteTransitions.mapIndexed { index, it ->
+        it.animateFloat(
+            initialValue = 0f,
+            targetValue = -maxOffset,
+            animationSpec = infiniteRepeatable(
+                animation = keyframes {
+                    durationMillis = animationDuration
+                    0f at 0 // Start at 0 offset
+                    maxOffset at animationDuration / 4 // Max offset at 1/4 of the duration
+                    maxOffset at animationDuration * 3 / 4 // Stay at max offset until 3/4
+                    0f at animationDuration // Back to 0 at the end
+                },
+                repeatMode = RepeatMode.Restart,
+                initialStartOffset = StartOffset(delayBetweenDots * index) // Staggered start
+            ), label = ""
+        )
+    }
+
+    // Use a Canvas to draw the dots
+    Canvas(modifier = modifier) {
+        val center = size.width / 2
+        val dotSpacing = dotSize * 1.5f // Space between dots
+
+        // Calculate the starting x-position to center the group of dots
+        val startX = center - (dotSpacing * 1.5f)
+
+        // Draw each dot
+        for (i in 0 until 4) {
+            drawCircle(
+                color = dotColor,
+                radius = dotSize / 2,
+                center = Offset(startX + i * dotSpacing, size.height / 2 + offsets[i].value.dp.toPx())
+            )
+        }
+    }
+}
+
+@Composable
 fun ChatInput(
     message: String,
     onMessageChange: (String) -> Unit,
     onSendClick: () -> Unit,
+    isLoading: Boolean = false,
     modifier: Modifier = Modifier
 ) {
-    Surface(
+    Column(
         modifier = modifier
             .fillMaxWidth()
-            .padding(horizontal = 16.dp, vertical = 4.dp),
-        shape = RoundedCornerShape(24.dp),
-        shadowElevation = 4.dp,
-        color = MaterialTheme.colorScheme.surface
+            .padding(horizontal = 4.dp, vertical = 8.dp),
+        horizontalAlignment = Alignment.Start
     ) {
-        Row(
-            modifier = Modifier
-                .fillMaxWidth()
-                .padding(horizontal = 4.dp, vertical = 2.dp),
-            verticalAlignment = Alignment.CenterVertically
-        ) {
-            // 表情按钮
-            IconButton(
-                onClick = { /* TODO: 显示更多 */ }
+        if (isLoading) {
+//            LoadingAnimation(
+//                modifier = Modifier
+//                    .padding(horizontal = 16.dp, vertical = 8.dp)
+//            )
+//            Spacer(modifier = Modifier.height(8.dp))
+            Row(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .padding(vertical = 8.dp),
+                horizontalArrangement = Arrangement.Start
             ) {
-                Icon(
-                    painter = painterResource(id = R.drawable.ic_more),
-                    contentDescription = "更多",
-                    tint = MaterialTheme.colorScheme.onSurfaceVariant
+                LoadingAnimation(
+                    modifier = Modifier
+                        .height(36.dp)
+                        .width(128.dp)
+//                        .size(128.dp) // 设置合理的大小，避免超出屏幕
+                        .align(Alignment.CenterVertically) // 垂直居中对齐
                 )
             }
+        }
 
-            // 输入框
-            TextField(
-                value = message,
-                onValueChange = onMessageChange,
+        Surface(
+            modifier = Modifier
+                .fillMaxWidth()
+                .padding(horizontal = 16.dp, vertical = 4.dp),
+            shape = RoundedCornerShape(24.dp),
+            shadowElevation = 4.dp,
+            color = MaterialTheme.colorScheme.surface
+        ) {
+            Row(
                 modifier = Modifier
-                    .weight(1f)
-                    .padding(horizontal = 1.dp),
-                textStyle = MaterialTheme.typography.bodyLarge.copy(
-                    color = MaterialTheme.colorScheme.onSurface
-                ),
-                placeholder = {
-                    Text(
-                        "Message...",
-                        style = MaterialTheme.typography.bodyLarge,
-                        color = MaterialTheme.colorScheme.onSurfaceVariant
-                    )
-                },
-                singleLine = true, // 确保单行输入
-                keyboardOptions = KeyboardOptions.Default.copy(
-                    imeAction = ImeAction.Send // 设置IME动作为发送
-                ),
-                keyboardActions = KeyboardActions(
-                    onSend = {
-                        onSendClick() // 用户点击发送按钮时触发发送逻辑
-                    }
-                ),
-                colors = TextFieldDefaults.colors(
-                    focusedContainerColor = Transparent,
-                    unfocusedContainerColor = Transparent,
-                    disabledContainerColor = Transparent,
-                    cursorColor = MaterialTheme.colorScheme.primary,
-                    focusedIndicatorColor = Transparent, // 有需要可以设置成其他颜色
-                    unfocusedIndicatorColor = Transparent, // 有需要可以设置成其他颜色
-                )
-            )
-
-            // 发送按钮
-            IconButton(
-                onClick = onSendClick,
-                enabled = message.isNotEmpty()
+                    .fillMaxWidth()
+                    .height(IntrinsicSize.Min) // 使用 IntrinsicSize.Min
+                    .padding(horizontal = 4.dp, vertical = 2.dp),
+                verticalAlignment = Alignment.CenterVertically
             ) {
-                Icon(
-                    painter = painterResource(id = R.drawable.ic_send),
-                    contentDescription = "发送",
-                    tint = if (message.isNotEmpty())
-                        MaterialTheme.colorScheme.primary
-                    else MaterialTheme.colorScheme.onSurfaceVariant
+                // 表情按钮
+                IconButton(
+                    onClick = { /* TODO: 显示更多 */ }
+                ) {
+                    Icon(
+                        painter = painterResource(id = R.drawable.ic_more),
+                        contentDescription = "更多",
+                        tint = MaterialTheme.colorScheme.onSurfaceVariant
+                    )
+                }
+
+                // 输入框
+                TextField(
+                    value = message,
+                    onValueChange = onMessageChange,
+                    modifier = Modifier
+                        .weight(1f)
+                        .fillMaxWidth() // 使用 fillMaxWidth
+                        .padding(horizontal = 1.dp)
+                        .defaultMinSize(minHeight = 0.dp),
+                    textStyle = MaterialTheme.typography.bodyLarge.copy(
+                        color = MaterialTheme.colorScheme.onSurface
+                    ),
+                    placeholder = {
+                        Text(
+                            "Message...",
+                            style = MaterialTheme.typography.bodyLarge,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant
+                        )
+                    },
+                    singleLine = true,
+                    keyboardOptions = KeyboardOptions.Default.copy(
+                        imeAction = ImeAction.Send
+                    ),
+                    keyboardActions = KeyboardActions(
+                        onSend = {
+                            onSendClick()
+                        }
+                    ),
+                    colors = TextFieldDefaults.colors(
+                        focusedContainerColor = Color.Transparent,
+                        unfocusedContainerColor = Color.Transparent,
+                        disabledContainerColor = Color.Transparent,
+                        cursorColor = MaterialTheme.colorScheme.primary,
+                        focusedIndicatorColor = Color.Transparent,
+                        unfocusedIndicatorColor = Color.Transparent
+                    )
                 )
+
+                // 发送按钮
+                IconButton(
+                    onClick = onSendClick,
+                    enabled = message.isNotEmpty()
+                ) {
+                    Icon(
+                        painter = painterResource(id = R.drawable.ic_send),
+                        contentDescription = "发送",
+                        tint = MaterialTheme.colorScheme.primary
+                    )
+                }
             }
         }
     }
 }
+
+@Preview
+@Composable
+fun ChatInputPreview() {
+    MaterialTheme { // Provide a MaterialTheme for the preview
+        ChatInput(
+            message = "Hello",
+            onMessageChange = { /* Handle message change (not used in preview) */ },
+            onSendClick = { /* Handle send click (not used in preview) */ },
+            isLoading = false
+        )
+    }
+}
+
+@Preview
+@Composable
+fun ChatInputLoadingPreview() {
+    MaterialTheme {
+        ChatInput(
+            message = "",
+            onMessageChange = { /* Handle message change (not used in preview) */ },
+            onSendClick = { /* Handle send click (not used in preview) */ },
+            isLoading = true
+        )
+    }
+}
+
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -772,23 +849,6 @@ fun CardsScreen() {
     }
 }
 
-@Preview(showBackground = true)
-@Composable
-fun DefaultPreview() {
-    PetChatApp()
-}
-
-@Preview(showBackground = true, name = "聊天列表预览")
-@Composable
-fun ChatSessionListPreview() {
-    MaterialTheme {
-        ChatSessionList(
-            onDrawerClick = {},
-            onSessionSelected = {}
-        )
-    }
-}
-
 @Preview(showBackground = true, name = "聊天界面预览")
 @Composable
 fun ChatScreenPreview() {
@@ -806,18 +866,6 @@ fun ChatScreenPreview() {
 fun CardsScreenPreview() {
     MaterialTheme {
         CardsScreen()
-    }
-}
-
-@Preview(showBackground = true, name = "聊天输入框预览")
-@Composable
-fun ChatInputPreview() {
-    MaterialTheme {
-        ChatInput(
-            message = "Hello, World!",
-            onMessageChange = {},
-            onSendClick = {}
-        )
     }
 }
 
