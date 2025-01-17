@@ -10,9 +10,7 @@ import androidx.activity.result.contract.ActivityResultContracts
 import androidx.activity.result.ActivityResultLauncher
 import androidx.compose.foundation.ExperimentalFoundationApi
 import androidx.compose.foundation.Image
-import androidx.core.app.ActivityCompat
 import androidx.core.content.ContextCompat
-import androidx.core.content.pm.PackageInfoCompat
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
@@ -29,7 +27,6 @@ import com.example.chat.model.ChatMessage
 import com.example.chat.model.PetTypes
 import kotlinx.coroutines.launch
 import java.util.*
-import androidx.compose.ui.graphics.vector.ImageVector
 import com.example.chat.ui.NotesScreen
 import androidx.compose.material.icons.Icons
 import androidx.compose.foundation.shape.RoundedCornerShape
@@ -39,9 +36,7 @@ import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.text.style.TextOverflow
 import com.example.chat.model.ChatSession
 import java.text.SimpleDateFormat
-import android.app.Application
 import android.view.WindowManager
-import androidx.compose.animation.Crossfade
 import androidx.compose.animation.core.RepeatMode
 import androidx.compose.animation.core.StartOffset
 import androidx.compose.animation.core.animateFloat
@@ -52,27 +47,27 @@ import androidx.compose.animation.core.tween
 import androidx.compose.animation.core.updateTransition
 import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.background
-import androidx.compose.foundation.clickable
 import androidx.compose.material.icons.filled.Menu
 import androidx.compose.material.icons.filled.Settings
-import androidx.compose.ui.tooling.preview.PreviewParameter
-import androidx.compose.ui.tooling.preview.PreviewParameterProvider
 import androidx.compose.material3.ModalNavigationDrawer
 import androidx.compose.material3.ModalDrawerSheet
 import androidx.compose.material3.rememberDrawerState
 import androidx.compose.material3.DrawerValue
 import androidx.core.view.WindowCompat
 import androidx.compose.ui.graphics.Color
-import androidx.compose.ui.graphics.Color.Companion.Transparent
 import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.foundation.text.KeyboardActions
 import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.ui.draw.alpha
+import androidx.compose.ui.draw.blur
 import androidx.compose.ui.geometry.Offset
+import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.layout.ContentScale
+import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.input.ImeAction
 import androidx.compose.ui.zIndex
+import com.example.chat.viewmodel.CardsViewModel
 import kotlinx.coroutines.delay
 
 class MainActivity : ComponentActivity() {
@@ -118,7 +113,10 @@ class MainActivity : ComponentActivity() {
 
 @OptIn(ExperimentalFoundationApi::class, ExperimentalMaterial3Api::class)
 @Composable
-fun PetChatApp(viewModel: PetChatViewModel = viewModel()) {
+fun PetChatApp(
+    viewModel: PetChatViewModel = viewModel(),
+    cardsViewModel: CardsViewModel = viewModel() // 添加CardsViewModel
+) {
     var currentScreen by remember { mutableStateOf(Screen.Chat) }
     var currentPetType by remember { mutableStateOf(PetTypes.CAT) }
     val drawerState = rememberDrawerState(initialValue = DrawerValue.Closed)
@@ -163,7 +161,7 @@ fun PetChatApp(viewModel: PetChatViewModel = viewModel()) {
                                     }
                                 },
                                 colors = TopAppBarDefaults.topAppBarColors(
-                                    containerColor = MaterialTheme.colorScheme.primaryContainer,
+                                    containerColor = Color.White,
                                     titleContentColor = MaterialTheme.colorScheme.onPrimaryContainer,
                                     navigationIconContentColor = MaterialTheme.colorScheme.onPrimaryContainer,
                                     actionIconContentColor = MaterialTheme.colorScheme.onPrimaryContainer
@@ -184,7 +182,7 @@ fun PetChatApp(viewModel: PetChatViewModel = viewModel()) {
                                 },
                                 actions = { /* 其他操作 */ },
                                 colors = TopAppBarDefaults.topAppBarColors(
-                                    containerColor = MaterialTheme.colorScheme.primaryContainer,
+                                    containerColor = Color.White,
                                     titleContentColor = MaterialTheme.colorScheme.onPrimaryContainer,
                                     navigationIconContentColor = MaterialTheme.colorScheme.onPrimaryContainer,
                                     actionIconContentColor = MaterialTheme.colorScheme.onPrimaryContainer
@@ -205,7 +203,7 @@ fun PetChatApp(viewModel: PetChatViewModel = viewModel()) {
                                 },
                                 actions = { /* 其他操作 */ },
                                 colors = TopAppBarDefaults.topAppBarColors(
-                                    containerColor = MaterialTheme.colorScheme.primaryContainer,
+                                    containerColor = Color.White,
                                     titleContentColor = MaterialTheme.colorScheme.onPrimaryContainer,
                                     navigationIconContentColor = MaterialTheme.colorScheme.onPrimaryContainer,
                                     actionIconContentColor = MaterialTheme.colorScheme.onPrimaryContainer
@@ -226,7 +224,7 @@ fun PetChatApp(viewModel: PetChatViewModel = viewModel()) {
                                 },
                                 actions = { /* 其他操作 */ },
                                 colors = TopAppBarDefaults.topAppBarColors(
-                                    containerColor = MaterialTheme.colorScheme.primaryContainer,
+                                    containerColor = Color.White,
                                     titleContentColor = MaterialTheme.colorScheme.onPrimaryContainer,
                                     navigationIconContentColor = MaterialTheme.colorScheme.onPrimaryContainer,
                                     actionIconContentColor = MaterialTheme.colorScheme.onPrimaryContainer
@@ -236,7 +234,10 @@ fun PetChatApp(viewModel: PetChatViewModel = viewModel()) {
                     }
                 },
                 bottomBar = {
-                    NavigationBar {
+                    NavigationBar(
+                        containerColor = Color.White,
+                        contentColor = Color(250,142, 57),
+                    ) {
                         BottomNavItems.forEach { item ->
                             NavigationBarItem(
                                 icon = {
@@ -272,7 +273,9 @@ fun PetChatApp(viewModel: PetChatViewModel = viewModel()) {
                                 }
                             )
                         }
-                        Screen.Cards -> CardsScreen()
+                        Screen.Cards -> {
+                            PetList(cardsViewModel.pets)
+                        }
                         Screen.Notes -> NotesScreen()
                         Screen.Social -> { /* 萌友圈暂不实现 */ }
                     }
@@ -420,14 +423,25 @@ fun ChatScreen(
         R.drawable.frame10
     )
 
-    Box(modifier = Modifier
+    Column(
+        modifier = Modifier
             .fillMaxSize()
-            .imePadding()
-        ) {
+    ) {
+        AnimatedAvatar(
+            frameResIds = frames,
+            modifier = Modifier
+                .padding(start = 24.dp, top = 24.dp)
+                .size(48.dp)
+                .clip(CircleShape)
+                .zIndex(1f) // 保证头像在顶部
+        )
+
+        // 聊天消息列表
         LazyColumn(
             state = listState,
             modifier = Modifier
-                .fillMaxSize(),
+                .weight(1f) // 占据剩余空间
+                .fillMaxWidth(),
             contentPadding = PaddingValues(horizontal = 16.dp, vertical = 8.dp)
         ) {
             items(
@@ -441,16 +455,7 @@ fun ChatScreen(
             }
         }
 
-        AnimatedAvatar(
-            frameResIds = frames,
-            modifier = Modifier
-                .padding(start = 24.dp, top = 24.dp)
-                .size(48.dp)
-                .clip(CircleShape)
-                .zIndex(1f) // 保证头像在顶部
-        )
-
-        Column(modifier = Modifier.align(Alignment.BottomCenter)) {
+//        Column(modifier = Modifier.align(Alignment.BottomCenter)) {
             ChatInput(
                 message = message,
                 onMessageChange = { message = it },
@@ -463,9 +468,11 @@ fun ChatScreen(
                         }
                     }
                 },
-                isLoading = viewModel.isLoading
+                isLoading = viewModel.isLoading,
+                modifier = Modifier
+                    .windowInsetsPadding(WindowInsets.ime.only(WindowInsetsSides.Bottom))
             )
-        }
+//        }
     }
 
     if (showSettings) {
@@ -637,7 +644,7 @@ fun ChatInput(
     Column(
         modifier = modifier
             .fillMaxWidth()
-            .padding(horizontal = 4.dp, vertical = 8.dp),
+            .padding(horizontal = 4.dp),
         horizontalAlignment = Alignment.Start
     ) {
         if (isLoading) {
@@ -662,81 +669,73 @@ fun ChatInput(
             }
         }
 
-        Surface(
+        Row(
             modifier = Modifier
                 .fillMaxWidth()
+                .background(color = Color.White)
+                .height(IntrinsicSize.Min)
                 .padding(horizontal = 16.dp, vertical = 4.dp),
-            shape = RoundedCornerShape(24.dp),
-            shadowElevation = 4.dp,
-            color = MaterialTheme.colorScheme.surface
+            verticalAlignment = Alignment.CenterVertically
         ) {
-            Row(
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .height(IntrinsicSize.Min) // 使用 IntrinsicSize.Min
-                    .padding(horizontal = 4.dp, vertical = 2.dp),
-                verticalAlignment = Alignment.CenterVertically
+            // "+" Icon Button
+            IconButton(
+                onClick = { /* TODO: Handle "+" button click */ },
+                modifier = Modifier.padding(end = 4.dp)
             ) {
-                // 表情按钮
-                IconButton(
-                    onClick = { /* TODO: 显示更多 */ }
-                ) {
-                    Icon(
-                        painter = painterResource(id = R.drawable.ic_more),
-                        contentDescription = "更多",
-                        tint = MaterialTheme.colorScheme.onSurfaceVariant
-                    )
-                }
-
-                // 输入框
-                TextField(
-                    value = message,
-                    onValueChange = onMessageChange,
-                    modifier = Modifier
-                        .weight(1f)
-                        .fillMaxWidth() // 使用 fillMaxWidth
-                        .padding(horizontal = 1.dp)
-                        .defaultMinSize(minHeight = 0.dp),
-                    textStyle = MaterialTheme.typography.bodyLarge.copy(
-                        color = MaterialTheme.colorScheme.onSurface
-                    ),
-                    placeholder = {
-                        Text(
-                            "Message...",
-                            style = MaterialTheme.typography.bodyLarge,
-                            color = MaterialTheme.colorScheme.onSurfaceVariant
-                        )
-                    },
-                    singleLine = true,
-                    keyboardOptions = KeyboardOptions.Default.copy(
-                        imeAction = ImeAction.Send
-                    ),
-                    keyboardActions = KeyboardActions(
-                        onSend = {
-                            onSendClick()
-                        }
-                    ),
-                    colors = TextFieldDefaults.colors(
-                        focusedContainerColor = Color.Transparent,
-                        unfocusedContainerColor = Color.Transparent,
-                        disabledContainerColor = Color.Transparent,
-                        cursorColor = MaterialTheme.colorScheme.primary,
-                        focusedIndicatorColor = Color.Transparent,
-                        unfocusedIndicatorColor = Color.Transparent
-                    )
+                Icon(
+                    painter = painterResource(id = R.drawable.ic_more), // Replace with your "+" icon
+                    contentDescription = "Add",
+                    tint = Color.Gray // Adjust the color as needed
                 )
+            }
 
-                // 发送按钮
-                IconButton(
-                    onClick = onSendClick,
-                    enabled = message.isNotEmpty()
-                ) {
-                    Icon(
-                        painter = painterResource(id = R.drawable.ic_send),
-                        contentDescription = "发送",
-                        tint = MaterialTheme.colorScheme.primary
+            // Text Field with Chinese text
+            TextField(
+                value = message,
+                onValueChange = onMessageChange,
+                modifier = Modifier
+                    .weight(1f)
+                    .padding(horizontal = 4.dp),
+                textStyle = MaterialTheme.typography.bodyLarge.copy(
+                    color = MaterialTheme.colorScheme.onSurface
+                ),
+                placeholder = {
+                    Text(
+                        "Message...",
+                        style = MaterialTheme.typography.bodyLarge,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant
                     )
-                }
+                },
+                singleLine = true,
+                keyboardOptions = KeyboardOptions.Default.copy(
+                    imeAction = ImeAction.Send
+                ),
+                keyboardActions = KeyboardActions(
+                    onSend = {
+                        onSendClick()
+                    }
+                ),
+                colors = TextFieldDefaults.colors(
+                    focusedContainerColor = Color.Transparent,
+                    unfocusedContainerColor = Color.Transparent,
+                    disabledContainerColor = Color.Transparent,
+                    cursorColor = MaterialTheme.colorScheme.primary,
+                    focusedIndicatorColor = Color.Transparent,
+                    unfocusedIndicatorColor = Color.Transparent
+                )
+            )
+
+            // Send Icon Button
+            IconButton(
+                onClick = onSendClick,
+                modifier = Modifier.padding(start = 4.dp),
+                enabled = message.isNotEmpty()
+            ) {
+                Icon(
+                    painter = painterResource(id = R.drawable.ic_send), // Replace with your send icon
+                    contentDescription = "Send",
+                    tint = Color(0xFFE9673A) // Adjust the color as needed
+                )
             }
         }
     }
@@ -768,104 +767,121 @@ fun ChatInputLoadingPreview() {
     }
 }
 
-
-@OptIn(ExperimentalMaterial3Api::class)
 @Composable
-fun CardsScreen() {
-    Column(
-        modifier = Modifier.fillMaxSize()
+fun PetList(pets: List<com.example.chat.model.Pet>, modifier: Modifier = Modifier) {
+    LazyColumn(
+        modifier = modifier.fillMaxSize(),
+        contentPadding = PaddingValues(16.dp),
+        verticalArrangement = Arrangement.spacedBy(16.dp)
     ) {
-//        // 顶部栏
-//        TopAppBar(
-//            title = {
-//                Text(
-//                    "名片夹",
-//                    maxLines = 1,
-//                    overflow = TextOverflow.Ellipsis
-//                )
-//            },
-//            colors = TopAppBarDefaults.largeTopAppBarColors(
-//                containerColor = MaterialTheme.colorScheme.primaryContainer,
-//                titleContentColor = MaterialTheme.colorScheme.onPrimaryContainer,
-//                navigationIconContentColor = MaterialTheme.colorScheme.onPrimaryContainer
-//            ),
-////            modifier = Modifier.windowInsetsPadding(WindowInsets.statusBars),
-//        )
-
-        // 照片和基础信息区域
-        Row(
-            modifier = Modifier
-                .fillMaxWidth()
-                .padding(16.dp)
-        ) {
-            // 照片区域
-            Card(
-                modifier = Modifier
-                    .weight(1f)
-                    .aspectRatio(1f)
-                    .padding(end = 8.dp),
-                shape = RoundedCornerShape(8.dp)
-            ) {
-                Box(
-                    modifier = Modifier.fillMaxSize(),
-                    contentAlignment = Alignment.Center
-                ) {
-                    Text("照片")
-                }
-            }
-
-            // 基础信息区域
-            Card(
-                modifier = Modifier
-                    .weight(2f)
-                    .aspectRatio(2f)
-                    .padding(start = 8.dp),
-                shape = RoundedCornerShape(8.dp)
-            ) {
-                Box(
-                    modifier = Modifier.fillMaxSize(),
-                    contentAlignment = Alignment.Center
-                ) {
-                    Text("基础信息")
-                }
-            }
+        items(pets) { pet ->
+            PetCard(pet)
         }
+    }
+}
 
-        // 详细信息区域
-        Card(
-            modifier = Modifier
-                .fillMaxWidth()
-                .weight(1f)
-                .padding(16.dp),
-            shape = RoundedCornerShape(8.dp)
-        ) {
+@Composable
+fun PetCard(pet: com.example.chat.model.Pet) {
+    Card(
+        modifier = Modifier
+            .fillMaxWidth()
+            .height(280.dp),
+        shape = RoundedCornerShape(16.dp),
+        elevation = CardDefaults.cardElevation(defaultElevation = 4.dp)
+    ) {
+        Box(modifier = Modifier.fillMaxSize()) {
+            // 背景图片
+            Image(
+                painter = painterResource(id = pet.imageRes),
+                contentDescription = "Pet Image",
+                modifier = Modifier.size(300.dp),
+                contentScale = ContentScale.Crop
+            )
+            
+            // 毛玻璃效果底层
             Box(
-                modifier = Modifier.fillMaxSize(),
-                contentAlignment = Alignment.Center
+                modifier = Modifier
+                    .align(Alignment.BottomCenter)
+                    .fillMaxWidth()
+                    .height(100.dp) // 固定高度
+                    .background(
+                        brush = Brush.verticalGradient(
+                            colors = listOf(
+                                Color.Transparent,
+                                Color.White.copy(alpha = 0.5f)
+                            ),
+                            startY = 0f,
+                            endY = 50f
+                        )
+                    )
+                    .blur(radius = 20.dp) // 增加模糊半径
+            )
+
+            // 信息内容层(在毛玻璃效果之上)
+            Column(
+                modifier = Modifier
+                    .align(Alignment.BottomCenter)
+                    .fillMaxWidth()
+                    .padding(horizontal = 16.dp, vertical = 12.dp)
             ) {
-                Text("详细信息")
+                // 名字和品种行
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.SpaceBetween,
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    Text(
+                        text = pet.name,
+                        style = MaterialTheme.typography.titleLarge,
+                        fontWeight = FontWeight.Bold,
+                        color = Color.Black // 确保文字在毛玻璃背景上清晰可见
+                    )
+                    Text(
+                        text = pet.breed,
+                        style = MaterialTheme.typography.bodyLarge,
+                        color = Color.White.copy(alpha = 0.8f)
+                    )
+                }
+                
+                Spacer(modifier = Modifier.height(8.dp))
+                
+//                // 年龄和性别行
+//                Row(
+//                    modifier = Modifier.fillMaxWidth(),
+//                    horizontalArrangement = Arrangement.spacedBy(16.dp)
+//                ) {
+//                    Row(verticalAlignment = Alignment.CenterVertically) {
+//                        Icon(
+//                            painter = painterResource(id = R.drawable.ic_more),
+//                            contentDescription = "Age",
+//                            modifier = Modifier.size(16.dp),
+//                            tint = Color.White
+//                        )
+//                        Spacer(modifier = Modifier.width(4.dp))
+//                        Text(
+//                            text = pet.age,
+//                            style = MaterialTheme.typography.bodyMedium,
+//                            color = Color.White.copy(alpha = 0.8f)
+//                        )
+//                    }
+//
+//                    Row(verticalAlignment = Alignment.CenterVertically) {
+//                        Icon(
+//                            painter = painterResource(id = R.drawable.ic_more),
+//                            contentDescription = "Gender",
+//                            modifier = Modifier.size(16.dp),
+//                            tint = Color.White
+//                        )
+//                        Spacer(modifier = Modifier.width(4.dp))
+//                        Text(
+//                            text = pet.gender,
+//                            style = MaterialTheme.typography.bodyMedium,
+//                            color = Color.White.copy(alpha = 0.8f)
+//                        )
+//                    }
+//                }
             }
         }
-    }
-}
-
-@Preview(showBackground = true, name = "聊天界面预览")
-@Composable
-fun ChatScreenPreview() {
-    MaterialTheme {
-        ChatScreen(
-            viewModel = PetChatViewModel(Application()),
-            petType = PetTypes.CAT,
-            onDrawerClick = {}
-        )
-    }
-}
-
-@Preview(showBackground = true, name = "名片夹预览")
-@Composable
-fun CardsScreenPreview() {
-    MaterialTheme {
-        CardsScreen()
     }
 }
 
